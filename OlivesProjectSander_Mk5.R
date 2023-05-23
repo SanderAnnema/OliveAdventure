@@ -10,7 +10,7 @@
 # To begin, the session will be cleaned by removing all variables.
 rm(list=ls())
 
-## Loading the required libraries
+## Loading the required libraries. This part will need to be updated later on, as I still have a bunch of packages loaded that are only used in previous versions of the code.
 library(ggplot2)
 library(reshape2)
 library(tidyr)
@@ -79,12 +79,12 @@ labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
 
 # Make the boxplot of the data before normalization
 BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
-boxPlotBNorm = ggplot(Data_BNormNoZero, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution before normalization", y = "log2(intensity)", x = "samples") +
+Plot_boxBNorm = ggplot(Data_BNormNoZero, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution before normalization", y = "log2(intensity)", x = "samples") +
   geom_violin(aes(col = color)) + geom_boxplot(outlier.color = "black", col = labelStraincolor, width=0.21) + BoxplotFormat1
 
 ## Print the plot and save it as a PNG
-print(boxPlotBNorm)
-ggsave("non_normalized_data.png", plot = boxPlotBNorm,
+print(Plot_boxBNorm)
+ggsave("non_normalized_data.png", plot = Plot_boxBNorm,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
 #### Boxplot after normalization ####
@@ -106,12 +106,12 @@ labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
 
 # Make the boxplot of the data before normalization
 BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
-boxPlotANorm = ggplot(Data_ANormNoZero, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization", y = "log2(intensity)", x = "samples") +
+Plot_boxANorm = ggplot(Data_ANormNoZero, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization", y = "log2(intensity)", x = "samples") +
   geom_violin(aes(col = color)) + geom_boxplot(outlier.color = "black", col = labelStraincolor, width=0.21) + BoxplotFormat1
 
 ## Print the plot and save it as a PNG
-print(boxPlotANorm)
-ggsave("normalized_data.png", plot = boxPlotANorm,
+print(Plot_boxANorm)
+ggsave("normalized_data.png", plot = Plot_boxANorm,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
 #### Averaging duplicates ####
@@ -151,12 +151,12 @@ labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
 
 # Make the boxplot of the data before normalization
 BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
-boxPlotAMean = ggplot(Data_AMeanNoZero, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization and duplicate averageing", y = "log2(intensity)", x = "samples") +
+Plot_boxAMean = ggplot(Data_AMeanNoZero, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization and duplicate averageing", y = "log2(intensity)", x = "samples") +
   geom_violin(aes(col = color)) + geom_boxplot(outlier.color = "black", aes(color = color), width=0.21) + BoxplotFormat1
 
 ## Print the plot and save it as a PNG
-print(boxPlotAMean)
-ggsave("averaged_data.png", plot = boxPlotAMean,
+print(Plot_boxAMean)
+ggsave("averaged_data.png", plot = Plot_boxAMean,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
 #### Differential expression analysis with a 2-way ANOVA between controls and treated samples ####
@@ -246,7 +246,7 @@ Data_ANOVA$Adj_Pvalue_interaction = Adj_Pvalue_interaction
 
 ## Data filtering
 # Select only those proteins where the p-values of both the adjusted variable_type and sensitivity_type are below 0.01
-Selection_rows = Data_ANOVA$Adj_Pvalue_variableType < 0.01 & Data_ANOVA$Adj_Pvalue_sensitivityType < 0.01
+Selection_rows = Data_ANOVA$Adj_Pvalue_variableType < 0.01 & Data_ANOVA$Adj_Pvalue_sensitivityType < 0.01 & Data_ANOVA$Adj_Pvalue_interaction < 0.01
 
 # Create the filtered data frame, which will contain the significant proteins
 Data_ANOVA_signProteins = Data_ANOVA[Selection_rows, ]
@@ -258,13 +258,17 @@ Vector_selected_proteins = Data_ANOVA_signProteins$Accession
 
 # Subset 'Data_long to retain only significant proteins
 Data_long_sign = subset(Data_long, accession %in% Vector_selected_proteins)
-  
+
+# Convert the intensities to log2. This decreases variance between samples.
+Data_long_sign$intensity = log2(Data_long_sign$intensity)
+names(Data_long_sign)[4] = "log2_intensity"
+
 # Calculate the overall mean of all the significant protein intensities individually
-Data_meanSD = aggregate(intensity ~ accession, data = Data_long_sign, FUN = mean)
+Data_meanSD = aggregate(log2_intensity ~ accession, data = Data_long_sign, FUN = mean)
 colnames(Data_meanSD)[2] = "overall_mean"
 
 # Calculate the standard deviation for each mean
-DummyFrame = aggregate(intensity ~ accession, data = Data_long_sign, FUN = sd)
+DummyFrame = aggregate(log2_intensity ~ accession, data = Data_long_sign, FUN = sd)
 colnames(DummyFrame)[2] = "overall_sd"
 
 # Add the column to the heatmap data frame
@@ -272,22 +276,29 @@ Data_meanSD = merge(Data_meanSD, DummyFrame, by = "accession")
 rm(DummyFrame)
 
 # Calculate the z-values
-Data_heatmap = data.frame(Data_long_sign, z_value = (Data_long_sign$intensity - Data_meanSD$overall_mean[match(Data_long_sign$accession, Data_meanSD$accession)]) / Data_meanSD$overall_sd[match(Data_long_sign$accession, Data_meanSD$accession)])
+Data_heatmap = data.frame(Data_long_sign, z_value = (Data_long_sign$log2_intensity - Data_meanSD$overall_mean[match(Data_long_sign$accession, Data_meanSD$accession)]) / Data_meanSD$overall_sd[match(Data_long_sign$accession, Data_meanSD$accession)])
 
-## Data clustering
-# Subset the relevant data
-DummyFrame = Data_heatmap[, c("variable_type", "sensitivity_type", "z_value")]
+# Ensure the z_value column is numeric
+Data_heatmap$z_value = as.numeric(as.character(Data_heatmap$z_value))
 
-# Convert the data to a matrix
-Matrix_heatmap = as.matrix(DummyFrame)
+# Select the relevant columns from Data_heatmap
+DummyFrame = Data_heatmap[, c("accession", "variable_type", "sensitivity_type", "z_value")]
+DummyFrame$z_value = as.numeric(as.character(DummyFrame$z_value))
 
-# Perform clustering on rows, here by protein
-Data_heatmap_clustering = hclust(dist(Matrix_heatmap))
+# Pivot the data to create a matrix with proteins as rows and combinations as columns
+Matrix_heatmap = reshape2::dcast(DummyFrame, accession ~ variable_type + sensitivity_type, 
+                                  value.var = "z_value", fun.aggregate = mean) # Here is average the z-values of the triplicates, but if this is not needed the 'fun.aggregate = mean' part can be removed.
 
-## Heatmap creation
-Heatmap(Matrix_heatmap,
-        col = colorRamp2(c(-3, 0, 3), c("blue", "white", "red")),
-        cluster_rows = Data_heatmap_clustering,
-        show_row_names = FALSE,
-        show_column_names = FALSE
-)
+# Convert the 'accession' column into row names and delete the column
+rownames(Matrix_heatmap) = Matrix_heatmap$accession
+Matrix_heatmap$accession = NULL
+
+# Create the heatmap using the matrix
+Plot_heatmap = pheatmap(Matrix_heatmap, clustering_distance_rows = "euclidean", clustering_distance_cols = "euclidean")
+
+rm(DummyFrame)
+
+## Print the plot and save it as a PNG
+print(Plot_heatmap)
+ggsave("Heatmap.png", plot = Plot_heatmap,
+       scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
