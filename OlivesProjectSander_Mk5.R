@@ -302,3 +302,87 @@ rm(DummyFrame)
 print(Plot_heatmap)
 ggsave("Heatmap.png", plot = Plot_heatmap,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
+
+#### p-value distribution overview ####
+# To determine how the p-values from the entire dataset are distributed, 4 Q-Q plots are made 
+# One for each factor, one for the interaction, and one for all the p-values.
+
+## Prepare the data
+# Create a subset of the data frame containing only the relevant columns
+DummyFrame1 = Data_ANOVA[, c("Accession", "Adj_Pvalue_variableType", "Adj_Pvalue_sensitivityType", "Adj_Pvalue_interaction")]
+
+## Generate the Q-Q plots
+# Variable type
+QQData_variable = qqplot(DummyFrame1$Adj_Pvalue_variableType, ppoints(nrow(DummyFrame1)), main = "Q-Q Plot: Variable Type")
+
+# Sensitivity type
+QQData_sensitivity = qqplot(DummyFrame1$Adj_Pvalue_sensitivityType, ppoints(nrow(DummyFrame1)), main = "Q-Q Plot: Sensitivity Type")
+
+# Interaction
+QQData_interaction = qqplot(DummyFrame1$Adj_Pvalue_interaction, ppoints(nrow(DummyFrame1)), main = "Q-Q Plot: Interaction")
+
+# Combined factors
+DummyFrame2 = c(DummyFrame1$Adj_Pvalue_variableType, DummyFrame1$Adj_Pvalue_sensitivityType, DummyFrame1$Adj_Pvalue_interaction) # Another subset is made with the combined p-values
+QQData_combined = qqplot(DummyFrame2, ppoints(length(DummyFrame2)), main = "Q-Q Plot: All factors")
+
+# Remove the DummyFrames
+rm(DummyFrame1)
+rm(DummyFrame2)
+
+## Draw the Q-Q plots by converting the Q-Q plots into data frames, and then using ggplot2 to plot them properly
+# Variable type
+DummyFrame = data.frame(x = QQData_variable$x, y = QQData_variable$y)
+PlotQQ_variable = ggplot(DummyFrame, aes(x, y)) +
+  geom_point() +
+  xlab("Theoretical Quantiles") +
+  ylab("Observed Quantiles") +
+  xlim(0, 1) +
+  ylim(0, 1)
+rm(DummyFrame)
+
+# Sensitivity type
+DummyFrame = data.frame(x = QQData_sensitivity$x, y = QQData_sensitivity$y)
+PlotQQ_sensitivity = ggplot(DummyFrame, aes(x, y)) +
+  geom_point() +
+  xlab("Theoretical Quantiles") +
+  ylab("Observed Quantiles") +
+  xlim(0, 1) +
+  ylim(0, 1)
+rm(DummyFrame)
+
+# Interaction
+DummyFrame = data.frame(x = QQData_interaction$x, y = QQData_interaction$y)
+PlotQQ_interaction = ggplot(DummyFrame, aes(x, y)) +
+  geom_point() +
+  xlab("Theoretical Quantiles") +
+  ylab("Observed Quantiles") +
+  xlim(0, 1) +
+  ylim(0, 1)
+rm(DummyFrame)
+
+# Combined factors
+DummyFrame = data.frame(x = QQData_combined$x, y = QQData_combined$y)
+PlotQQ_combined = ggplot(DummyFrame, aes(x, y)) +
+  geom_point() +
+  xlab("Theoretical Quantiles") +
+  ylab("Observed Quantiles") +
+  xlim(0, 1) +
+  ylim(0, 1)
+rm(DummyFrame)
+
+## Print and save the plots
+# Variable type
+print(PlotQQ_variable)
+ggsave("QQPlot_variable.png", plot = PlotQQ_variable, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
+
+# Sensitivity type
+print(PlotQQ_sensitivity)
+ggsave("QQPlot_sensitivity.png", plot = PlotQQ_sensitivity, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
+
+# Interaction
+print(PlotQQ_interaction)
+ggsave("QQPlot_interaction.png", plot = PlotQQ_interaction, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
+
+# Combined factors
+print(PlotQQ_combined)
+ggsave("QQPlot_combined.png", plot = PlotQQ_combined, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
