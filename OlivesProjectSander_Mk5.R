@@ -293,6 +293,9 @@ Matrix_heatmap = reshape2::dcast(DummyFrame, accession ~ variable_type + sensiti
 rownames(Matrix_heatmap) = Matrix_heatmap$accession
 Matrix_heatmap$accession = NULL
 
+# Specify a randomized number to ensure a reproducible heatmap
+set.seed(12345)
+
 # Create the heatmap using the matrix
 Plot_heatmap = pheatmap(Matrix_heatmap, clustering_distance_rows = "euclidean", clustering_distance_cols = "euclidean")
 
@@ -303,7 +306,7 @@ print(Plot_heatmap)
 ggsave("Heatmap.png", plot = Plot_heatmap,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
-#### p-value distribution overview ####
+#### p-value normality analysis with Q-Q plots ####
 # To determine how the p-values from the entire dataset are distributed, 4 Q-Q plots are made 
 # One for each factor, one for the interaction, and one for all the p-values.
 
@@ -386,3 +389,131 @@ ggsave("QQPlot_interaction.png", plot = PlotQQ_interaction, scale = 1, width = 8
 # Combined factors
 print(PlotQQ_combined)
 ggsave("QQPlot_combined.png", plot = PlotQQ_combined, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
+
+#### Histogram of the p-value distribution of all proteins ####
+## Data preparation
+# Subset the relevant data
+DummyFrame1 = Data_ANOVA[, c("Adj_Pvalue_variableType", "Adj_Pvalue_sensitivityType", "Adj_Pvalue_interaction")]
+DummyFrame2 = setNames(data.frame(DummyFrame1$Adj_Pvalue_variableType), "P_values")
+DummyFrame3 = setNames(data.frame(DummyFrame1$Adj_Pvalue_sensitivityType), "P_values")
+DummyFrame4 = setNames(data.frame(DummyFrame1$Adj_Pvalue_interaction), "P_values")
+DummyFrame5 = data.frame(P_values = (unlist(DummyFrame1)))
+
+# Ensure all columns are numeric
+DummyFrame1$Adj_Pvalue_variableType = as.numeric(DummyFrame1$Adj_Pvalue_variableType)
+DummyFrame1$Adj_Pvalue_sensitivityType = as.numeric(DummyFrame1$Adj_Pvalue_sensitivityType)
+DummyFrame1$Adj_Pvalue_interaction = as.numeric(DummyFrame1$Adj_Pvalue_interaction)
+DummyFrame2$P_values = as.numeric(DummyFrame2$P_values)
+DummyFrame3$P_values = as.numeric(DummyFrame3$P_values)
+DummyFrame4$P_values = as.numeric(DummyFrame4$P_values)
+DummyFrame5$P_values = as.numeric(DummyFrame5$P_values)
+
+## Create the histograms
+# Variable type
+PlotHist_variable = hist(DummyFrame2$P_values, breaks = 10, col = "skyblue",
+                             xlab = "P-values", ylab = "Frequency",
+                             main = "P-value distribution of the variable factor of all proteins")
+
+# Sensitivity type
+PlotHist_sensitivity = hist(DummyFrame3$P_values, breaks = 10, col = "skyblue",
+                                xlab = "P-values", ylab = "Frequency",
+                                main = "P-value distribution of the sensitivity factor of all proteins")
+
+# Interaction
+PlotHist_interaction = hist(DummyFrame4$P_values, breaks = 10, col = "skyblue",
+                                xlab = "P-values", ylab = "Frequency",
+                                main = "P-value distribution of the interaction between factor of all proteins")
+
+# Combined p-values
+PlotHist_combined = hist(DummyFrame5$P_values, breaks = 10, col = "skyblue",
+                             xlab = "P-values", ylab = "Frequency",
+                             main = "Total p-value distribution of the all proteins")
+
+## Print and save the plots
+# Print and save the histograms
+plot(PlotHist_variable)
+dev.copy(png, "PValue_Distribution_variableType.png", width = 8, height = 6, units = "in", res = 300)
+dev.off()
+
+plot(PlotHist_sensitivity)
+dev.copy(png, "PValue_Distribution_sensitivityType.png", width = 8, height = 6, units = "in", res = 300)
+dev.off()
+
+plot(PlotHist_interaction)
+dev.copy(png, "PValue_Distribution_interaction.png", width = 8, height = 6, units = "in", res = 300)
+dev.off()
+
+plot(PlotHist_combined)
+dev.copy(png, "PValue_Distribution_combined.png", width = 8, height = 6, units = "in", res = 300)
+dev.off()
+
+# Remove the dummy frames
+rm(DummyFrame1)
+rm(DummyFrame2)
+rm(DummyFrame3)
+rm(DummyFrame4)
+rm(DummyFrame5)
+
+#### Histogram of the p-value distribution of significant proteins ####
+## Data preparation
+# Subset the relevant data
+DummyFrame1 = Data_ANOVA_signProteins[, c("Adj_Pvalue_variableType", "Adj_Pvalue_sensitivityType", "Adj_Pvalue_interaction")]
+DummyFrame2 = setNames(data.frame(DummyFrame1$Adj_Pvalue_variableType), "P_values")
+DummyFrame3 = setNames(data.frame(DummyFrame1$Adj_Pvalue_sensitivityType), "P_values")
+DummyFrame4 = setNames(data.frame(DummyFrame1$Adj_Pvalue_interaction), "P_values")
+DummyFrame5 = data.frame(P_values = (unlist(DummyFrame1)))
+
+# Ensure all columns are numeric
+DummyFrame1$Adj_Pvalue_variableType = as.numeric(DummyFrame1$Adj_Pvalue_variableType)
+DummyFrame1$Adj_Pvalue_sensitivityType = as.numeric(DummyFrame1$Adj_Pvalue_sensitivityType)
+DummyFrame1$Adj_Pvalue_interaction = as.numeric(DummyFrame1$Adj_Pvalue_interaction)
+DummyFrame2$P_values = as.numeric(DummyFrame2$P_values)
+DummyFrame3$P_values = as.numeric(DummyFrame3$P_values)
+DummyFrame4$P_values = as.numeric(DummyFrame4$P_values)
+DummyFrame5$P_values = as.numeric(DummyFrame5$P_values)
+
+## Create the histograms
+# Variable type
+PlotHist_variable_sig = hist(DummyFrame2$P_values, breaks = 10, col = "skyblue",
+                          xlab = "P-values", ylab = "Frequency",
+                          main = "P-value distribution of the variable factor of significant proteins")
+
+# Sensitivity type
+PlotHist_sensitivity_sig = hist(DummyFrame3$P_values, breaks = 10, col = "skyblue",
+                             xlab = "P-values", ylab = "Frequency",
+                             main = "P-value distribution of the sensitivity factor of significant proteins")
+
+# Interaction
+PlotHist_interaction_sig = hist(DummyFrame4$P_values, breaks = 10, col = "skyblue",
+                             xlab = "P-values", ylab = "Frequency",
+                             main = "P-value distribution of the interaction between factor of significant proteins")
+
+# Combined p-values
+PlotHist_combined_sig = hist(DummyFrame5$P_values, breaks = 10, col = "skyblue",
+                          xlab = "P-values", ylab = "Frequency",
+                          main = "Total p-value distribution of the significant proteins")
+
+## Print and save the plots
+# Print and save the histograms
+plot(PlotHist_variable_sig)
+dev.copy(png, "PValue_Distribution_variableType_sig.png", width = 8, height = 6, units = "in", res = 300)
+dev.off()
+
+plot(PlotHist_sensitivity_sig)
+dev.copy(png, "PValue_Distribution_sensitivityType_sig.png", width = 8, height = 6, units = "in", res = 300)
+dev.off()
+
+plot(PlotHist_interaction_sig)
+dev.copy(png, "PValue_Distribution_interaction_sig.png", width = 8, height = 6, units = "in", res = 300)
+dev.off()
+
+plot(PlotHist_combined_sig)
+dev.copy(png, "PValue_Distribution_combined_sig.png", width = 8, height = 6, units = "in", res = 300)
+dev.off()
+
+# Remove the dummy frames
+rm(DummyFrame1)
+rm(DummyFrame2)
+rm(DummyFrame3)
+rm(DummyFrame4)
+rm(DummyFrame5)
