@@ -11,17 +11,10 @@
 rm(list=ls())
 
 ## Loading the required libraries. This part will need to be updated later on, as I still have a bunch of packages loaded that are only used in previous versions of the code.
-library(ggplot2)
 library(reshape2)
-library(tidyr)
-library(tidyverse)
-library(RColorBrewer)
-library(broom)
-library(multcompView)
-library(multcomp)
-library(readr)
+library(ggplot2)
 library(dplyr)
-library(ComplexHeatmap)
+library(tidyr)
 library(pheatmap)
 
 # Setting the working directory
@@ -167,12 +160,12 @@ ProtTab_Nonred_complete = ProtTab_Nonred[complete.cases(ProtTab_Nonred), ] # Wit
 # Convert the data frame to a long one
 Data_long = gather(ProtTab_Nonred_complete, key="variable", value="intensity", -accession) # Uses the 'gather()' function to make turn the data frame into a long format.
 Data_long = separate(Data_long, variable, c("variable_type", "sensitivity_type", "replicate")) # Separate the column names from each other.
-Data_long = Data_long[, -which(names(Data_long) == "replicate")] # Remove the 'replicate' column.
 
 # Sets the data types
 Data_long$variable_type = as.factor(Data_long$variable_type)
 Data_long$sensitivity_type = as.factor(Data_long$sensitivity_type)
 Data_long$intensity = as.numeric(Data_long$intensity)
+Data_long$replicate = as.factor(Data_long$replicate)
 
 ## Perform ANOVA for each protein and create the list of tables
 list_Tab_ANOVA = Data_long %>%
@@ -261,7 +254,7 @@ Data_long_sign = subset(Data_long, accession %in% Vector_selected_proteins)
 
 # Convert the intensities to log2. This decreases variance between samples.
 Data_long_sign$intensity = log2(Data_long_sign$intensity)
-names(Data_long_sign)[4] = "log2_intensity"
+names(Data_long_sign)[5] = "log2_intensity"
 
 # Calculate the overall mean of all the significant protein intensities individually
 Data_meanSD = aggregate(log2_intensity ~ accession, data = Data_long_sign, FUN = mean)
@@ -282,12 +275,12 @@ Data_heatmap = data.frame(Data_long_sign, z_value = (Data_long_sign$log2_intensi
 Data_heatmap$z_value = as.numeric(as.character(Data_heatmap$z_value))
 
 # Select the relevant columns from Data_heatmap
-DummyFrame = Data_heatmap[, c("accession", "variable_type", "sensitivity_type", "z_value")]
+DummyFrame = Data_heatmap[, c("accession", "variable_type", "sensitivity_type", "replicate", "z_value")]
 DummyFrame$z_value = as.numeric(as.character(DummyFrame$z_value))
 
 # Pivot the data to create a matrix with proteins as rows and combinations as columns
-Matrix_heatmap = reshape2::dcast(DummyFrame, accession ~ variable_type + sensitivity_type, 
-                                  value.var = "z_value", fun.aggregate = mean) # Here is average the z-values of the triplicates, but if this is not needed the 'fun.aggregate = mean' part can be removed.
+Matrix_heatmap = reshape2::dcast(DummyFrame, accession ~ variable_type + sensitivity_type + replicate, 
+                                 value.var = "z_value")
 
 # Convert the 'accession' column into row names and delete the column
 rownames(Matrix_heatmap) = Matrix_heatmap$accession
@@ -429,21 +422,16 @@ PlotHist_combined = hist(DummyFrame5$P_values, breaks = 10, col = "skyblue",
                              xlab = "P-values", ylab = "Frequency",
                              main = "Total p-value distribution of the all proteins")
 
-## Print and save the plots
-# Print and save the histograms
-plot(PlotHist_variable)
+## Save the plots
 dev.copy(png, "PValue_Distribution_variableType.png", width = 8, height = 6, units = "in", res = 300)
 dev.off()
 
-plot(PlotHist_sensitivity)
 dev.copy(png, "PValue_Distribution_sensitivityType.png", width = 8, height = 6, units = "in", res = 300)
 dev.off()
 
-plot(PlotHist_interaction)
 dev.copy(png, "PValue_Distribution_interaction.png", width = 8, height = 6, units = "in", res = 300)
 dev.off()
 
-plot(PlotHist_combined)
 dev.copy(png, "PValue_Distribution_combined.png", width = 8, height = 6, units = "in", res = 300)
 dev.off()
 
@@ -493,21 +481,16 @@ PlotHist_combined_sig = hist(DummyFrame5$P_values, breaks = 10, col = "skyblue",
                           xlab = "P-values", ylab = "Frequency",
                           main = "Total p-value distribution of the significant proteins")
 
-## Print and save the plots
-# Print and save the histograms
-plot(PlotHist_variable_sig)
+## Save the plots
 dev.copy(png, "PValue_Distribution_variableType_sig.png", width = 8, height = 6, units = "in", res = 300)
 dev.off()
 
-plot(PlotHist_sensitivity_sig)
 dev.copy(png, "PValue_Distribution_sensitivityType_sig.png", width = 8, height = 6, units = "in", res = 300)
 dev.off()
 
-plot(PlotHist_interaction_sig)
 dev.copy(png, "PValue_Distribution_interaction_sig.png", width = 8, height = 6, units = "in", res = 300)
 dev.off()
 
-plot(PlotHist_combined_sig)
 dev.copy(png, "PValue_Distribution_combined_sig.png", width = 8, height = 6, units = "in", res = 300)
 dev.off()
 
