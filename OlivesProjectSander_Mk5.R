@@ -26,6 +26,9 @@ ProteinFile = "proteins.csv"
 PeptideFile = "peptide.csv"
 IdxIntensCol = 9:44
 
+
+
+
 #### Loading and formatting data ####
 ProtTab_Full = read.csv(paste(DataFolder,ProteinFile, sep = ""), header =  TRUE)
 PepTab_Full = read.csv(paste(DataFolder,PeptideFile, sep = ""), header =  TRUE)
@@ -43,12 +46,18 @@ labelReplicate = unlist(lapply(labels, function(x) x[3])) # The third column, re
 labelTreatmentStrainRep = paste(labelTreatment, labelStrain, labelReplicate, sep = "_") # The three columns are reassembled into new labels containing only vital information
 labelTreatmentStrainUnique = unique(labelTreatmentStrainRep) # The duplicates are removed
 
+
+
+
 #### Median normalization ####
 ProtTab_Norm = ProtTab_Full # The new table for the normalized data
 overallMedian = median(as.vector(as.matrix(ProtTab_Full[,IdxIntensCol]))) # The overall median is calculated and used as a point for normalization
 
 ProtTab_Norm[,IdxIntensCol] = apply(ProtTab_Full[,IdxIntensCol], 2, function(x){ # On the intensity columns, a function is applied per column
   x*overallMedian/median(x[which(x>0)])}) # This involves calculating the median for all values above 0, then calculating the ratio between the overall median and this column median, and normalizing each value in the column with it.
+
+
+
 
 #### Visualization of the data ####
 # Boxplots will be drawn before- and after normalization, to identify interactions, outliers, and the spread of the data. As well as the assumptions needed for the 2-way ANOVA.
@@ -80,6 +89,9 @@ print(Plot_boxBNorm)
 ggsave("non_normalized_data.png", plot = Plot_boxBNorm,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
+
+
+
 #### Boxplot after normalization ####
 # Set up the data, and transform however needed (Same as before, just changed the data origin)
 Data_ANorm = melt(ProtTab_Norm[,IdxIntensCol]) # All the data is melted from a many-column table, to a 2 column one. Unlike before, the normalization table is used
@@ -107,6 +119,9 @@ print(Plot_boxANorm)
 ggsave("normalized_data.png", plot = Plot_boxANorm,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
+
+
+
 #### Averaging duplicates ####
 ### The previous 2 plots contain duplicates of the same samples, so here they will be averaged
 
@@ -124,6 +139,9 @@ df_mean = aggregate(value ~ accession + variable, data = DummyFrame, function(x)
 
 # Cast the modified melted dataframe back into a wide format
 ProtTab_Nonred = dcast(df_mean, accession ~ variable, value.var = "value")
+
+
+
 
 #### Plot the averaged data in a boxplot ####
 # Set up the data, and transform however needed. Different here, though the principle is the same
@@ -151,6 +169,9 @@ Plot_boxAMean = ggplot(Data_AMeanNoZero, aes(x = variable, y = value)) + labs(ti
 print(Plot_boxAMean)
 ggsave("averaged_data.png", plot = Plot_boxAMean,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
+
+
+
 
 #### Differential expression analysis with a 2-way ANOVA between controls and treated samples ####
 ## Filter the data
@@ -244,6 +265,9 @@ Selection_rows = Data_ANOVA$Adj_Pvalue_variableType < 0.01 & Data_ANOVA$Adj_Pval
 # Create the filtered data frame, which will contain the significant proteins
 Data_ANOVA_signProteins = Data_ANOVA[Selection_rows, ]
 
+
+
+
 #### Heatmap generation ####
 ## Data preparation
 # Create a vector containing the accession numbers of the significant proteins
@@ -298,6 +322,33 @@ rm(DummyFrame)
 print(Plot_heatmap)
 ggsave("Heatmap.png", plot = Plot_heatmap,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
+
+
+
+
+#### Normalized intensity normality analysis with Q-Q plots ####
+## Prepare the data
+# Create a subset of the data frame containing only the relevant columns
+DummyFrame1 = Data_ANormNoZero[, c("variable", "value")]
+
+## Generate the Q-Q plot for normalized intensities
+QQData_intensity = qqplot(DummyFrame1$value, ppoints(nrow(DummyFrame1)), main = "Q-Q Plot: Normalized Intensities")
+
+## Draw the Q-Q plots by converting the Q-Q plot into a data frame, and then using ggplot2 to plot it properly
+DummyFrame2 = data.frame(x = QQData_intensity$x, y = QQData_intensity$y)
+PlotQQ_intensity = ggplot(DummyFrame2, aes(x, y)) +
+  geom_point() +
+  xlab("Theoretical Quantiles") +
+  ylab("Observed Quantiles")
+
+## Print and save the plot
+print(PlotQQ_intensity)
+ggsave("QQPlot_intensity.png", plot = PlotQQ_intensity, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
+
+## Remove the dummy frame
+rm(DummyFrame1)
+rm(DummyFrame2)
+
 
 #### p-value normality analysis with Q-Q plots ####
 # To determine how the p-values from the entire dataset are distributed, 4 Q-Q plots are made 
@@ -383,6 +434,9 @@ ggsave("QQPlot_interaction.png", plot = PlotQQ_interaction, scale = 1, width = 8
 print(PlotQQ_combined)
 ggsave("QQPlot_combined.png", plot = PlotQQ_combined, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
 
+
+
+
 #### Histogram of the p-value distribution of all proteins ####
 ## Data preparation
 # Subset the relevant data
@@ -404,23 +458,27 @@ DummyFrame5$P_values = as.numeric(DummyFrame5$P_values)
 ## Create the histograms
 # Variable type
 PlotHist_variable = hist(DummyFrame2$P_values, breaks = 10, col = "skyblue",
-                             xlab = "P-values", ylab = "Frequency",
-                             main = "P-value distribution of the variable factor of all proteins")
+                         xlab = "P-values", ylab = "Frequency",
+                         main = "P-value distribution of the variable factor of all proteins",
+                         xlim = c(0, 1))
 
 # Sensitivity type
 PlotHist_sensitivity = hist(DummyFrame3$P_values, breaks = 10, col = "skyblue",
-                                xlab = "P-values", ylab = "Frequency",
-                                main = "P-value distribution of the sensitivity factor of all proteins")
+                            xlab = "P-values", ylab = "Frequency",
+                            main = "P-value distribution of the sensitivity factor of all proteins",
+                            xlim = c(0, 1))
 
 # Interaction
 PlotHist_interaction = hist(DummyFrame4$P_values, breaks = 10, col = "skyblue",
-                                xlab = "P-values", ylab = "Frequency",
-                                main = "P-value distribution of the interaction between factor of all proteins")
+                            xlab = "P-values", ylab = "Frequency",
+                            main = "P-value distribution of the interaction between factor of all proteins",
+                            xlim = c(0, 1))
 
 # Combined p-values
 PlotHist_combined = hist(DummyFrame5$P_values, breaks = 10, col = "skyblue",
-                             xlab = "P-values", ylab = "Frequency",
-                             main = "Total p-value distribution of the all proteins")
+                         xlab = "P-values", ylab = "Frequency",
+                         main = "Total p-value distribution of the all proteins",
+                         xlim = c(0, 1))
 
 ## Save the plots
 dev.copy(png, "PValue_Distribution_variableType.png", width = 8, height = 6, units = "in", res = 300)
@@ -441,6 +499,9 @@ rm(DummyFrame2)
 rm(DummyFrame3)
 rm(DummyFrame4)
 rm(DummyFrame5)
+
+
+
 
 #### Histogram of the p-value distribution of significant proteins ####
 ## Data preparation
@@ -463,23 +524,27 @@ DummyFrame5$P_values = as.numeric(DummyFrame5$P_values)
 ## Create the histograms
 # Variable type
 PlotHist_variable_sig = hist(DummyFrame2$P_values, breaks = 10, col = "skyblue",
-                          xlab = "P-values", ylab = "Frequency",
-                          main = "P-value distribution of the variable factor of significant proteins")
+                             xlab = "P-values", ylab = "Frequency",
+                             main = "P-value distribution of the variable factor of significant proteins",
+                             xlim = c(0, 1))
 
 # Sensitivity type
 PlotHist_sensitivity_sig = hist(DummyFrame3$P_values, breaks = 10, col = "skyblue",
-                             xlab = "P-values", ylab = "Frequency",
-                             main = "P-value distribution of the sensitivity factor of significant proteins")
+                                xlab = "P-values", ylab = "Frequency",
+                                main = "P-value distribution of the sensitivity factor of significant proteins",
+                                xlim = c(0, 1))
 
 # Interaction
 PlotHist_interaction_sig = hist(DummyFrame4$P_values, breaks = 10, col = "skyblue",
-                             xlab = "P-values", ylab = "Frequency",
-                             main = "P-value distribution of the interaction between factor of significant proteins")
+                                xlab = "P-values", ylab = "Frequency",
+                                main = "P-value distribution of the interaction between factor of significant proteins",
+                                xlim = c(0, 1))
 
 # Combined p-values
 PlotHist_combined_sig = hist(DummyFrame5$P_values, breaks = 10, col = "skyblue",
-                          xlab = "P-values", ylab = "Frequency",
-                          main = "Total p-value distribution of the significant proteins")
+                             xlab = "P-values", ylab = "Frequency",
+                             main = "Total p-value distribution of the significant proteins",
+                             xlim = c(0, 1))
 
 ## Save the plots
 dev.copy(png, "PValue_Distribution_variableType_sig.png", width = 8, height = 6, units = "in", res = 300)
