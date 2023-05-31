@@ -338,8 +338,8 @@ QQData_intensity = qqplot(DummyFrame1$value, ppoints(nrow(DummyFrame1)), main = 
 DummyFrame2 = data.frame(x = QQData_intensity$x, y = QQData_intensity$y)
 PlotQQ_intensity = ggplot(DummyFrame2, aes(x, y)) +
   geom_point() +
-  xlab("Theoretical Quantiles") +
-  ylab("Observed Quantiles")
+  xlab("Observed Quantiles") +
+  ylab("Theoretical Quantiles")
 
 ## Print and save the plot
 print(PlotQQ_intensity)
@@ -381,8 +381,8 @@ rm(DummyFrame2)
 DummyFrame = data.frame(x = QQData_variable$x, y = QQData_variable$y)
 PlotQQ_variable = ggplot(DummyFrame, aes(x, y)) +
   geom_point() +
-  xlab("Theoretical Quantiles") +
-  ylab("Observed Quantiles") +
+  xlab("Observed Quantiles") +
+  ylab("Theoretical Quantiles") +
   xlim(0, 1) +
   ylim(0, 1)
 rm(DummyFrame)
@@ -391,8 +391,8 @@ rm(DummyFrame)
 DummyFrame = data.frame(x = QQData_sensitivity$x, y = QQData_sensitivity$y)
 PlotQQ_sensitivity = ggplot(DummyFrame, aes(x, y)) +
   geom_point() +
-  xlab("Theoretical Quantiles") +
-  ylab("Observed Quantiles") +
+  xlab("Observed Quantiles") +
+  ylab("Theoretical Quantiles") +
   xlim(0, 1) +
   ylim(0, 1)
 rm(DummyFrame)
@@ -401,8 +401,8 @@ rm(DummyFrame)
 DummyFrame = data.frame(x = QQData_interaction$x, y = QQData_interaction$y)
 PlotQQ_interaction = ggplot(DummyFrame, aes(x, y)) +
   geom_point() +
-  xlab("Theoretical Quantiles") +
-  ylab("Observed Quantiles") +
+  xlab("Observed Quantiles") +
+  ylab("Theoretical Quantiles") +
   xlim(0, 1) +
   ylim(0, 1)
 rm(DummyFrame)
@@ -411,8 +411,8 @@ rm(DummyFrame)
 DummyFrame = data.frame(x = QQData_combined$x, y = QQData_combined$y)
 PlotQQ_combined = ggplot(DummyFrame, aes(x, y)) +
   geom_point() +
-  xlab("Theoretical Quantiles") +
-  ylab("Observed Quantiles") +
+  xlab("Observed Quantiles") +
+  ylab("Theoretical Quantiles") +
   xlim(0, 1) +
   ylim(0, 1)
 rm(DummyFrame)
