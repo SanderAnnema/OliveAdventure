@@ -1,10 +1,11 @@
 #### Introduction: ####
-# Master project by Sander Annema. 06/04/2023
+# Master project by Sander Annema. 31/05/2023
 # In this project, proteomics data from probiotic bacteria isolated from olives is processed. 
 # These bacteria are either resistant, intermediate, or sensitive to bile.
 # The expression data of both proteins and peptides was collected.
 # The goal of this project is to determine the effects of protein expression on the exposure of the bacterial strains by bile.
 # This will be achieved by performing a 2-way ANOVA, then generating a heat-map of the proteins.
+# Additionally, in this variant of the file, two imputation methods will be used to fill in missing data from the normalized dataset before the log2 is taken. This complete dataset is then processed in the same way as the 'Basic' variant.
 
 #### Preparation ####
 # To begin, the session will be cleaned by removing all variables.
@@ -16,6 +17,7 @@ library(ggplot2)
 library(dplyr)
 library(tidyr)
 library(pheatmap)
+library(data.table)
 
 # Setting the working directory
 setwd("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New")
@@ -59,13 +61,90 @@ ProtTab_Norm[,IdxIntensCol] = apply(ProtTab_Full[,IdxIntensCol], 2, function(x){
 
 
 
+#### Imputation of missing values ####
+### Mean imputation of those samples where at least 1 of the triplicates of each sample are >0. This will give a dataset of 6 values from which a mean can be taken, limiting the effects on the overall data.
+
+## Prepare the data
+# Subset the data to remove unnecessary columns
+Data_Imput = ProtTab_Norm[, c(3, 9:44)]
+
+# Make 6 subsets for individual triplicates, so they can be imputed later with greater ease
+# Subset: Control_Sensitive
+subset_control_sensitive = subset(Data_Imput, select = grepl("^Control_Sensitive", colnames(Data_Imput)))
+
+# Subset: Treated_Sensitive
+subset_treated_sensitive = subset(Data_Imput, select = grepl("^Treated_Sensitive", colnames(Data_Imput)))
+
+# Subset: Control_Intermediair
+subset_control_intermediair = subset(Data_Imput, select = grepl("^Control_Intermediair", colnames(Data_Imput)))
+
+# Subset: Treated_Intermediair
+subset_treated_intermediair = subset(Data_Imput, select = grepl("^Treated_Intermediair", colnames(Data_Imput)))
+
+# Subset: Control_Resistent
+subset_control_resistent = subset(Data_Imput, select = grepl("^Control_Resistent", colnames(Data_Imput)))
+
+# Subset: Treated_Resistent
+subset_treated_resistent = subset(Data_Imput, select = grepl("^Treated_Resistent", colnames(Data_Imput)))
+
+# Rename the row names of each subset data frame to the Accession column of Data_Imput
+rownames(subset_control_sensitive) = Data_Imput$Accession
+rownames(subset_treated_sensitive) = Data_Imput$Accession
+rownames(subset_control_intermediair) = Data_Imput$Accession
+rownames(subset_treated_intermediair) = Data_Imput$Accession
+rownames(subset_control_resistent) = Data_Imput$Accession
+rownames(subset_treated_resistent) = Data_Imput$Accession
+
+## Imputation of each sample
+# Define a function for mean imputation
+Function_meanImput = function(row) {
+  row_mean = mean(row)
+  row[row == 0] = row_mean
+  return(row)
+}
+
+# Apply the function to each subset data frame
+subset_control_sensitive = apply(subset_control_sensitive, 1, Function_meanImput)
+subset_treated_sensitive = apply(subset_treated_sensitive, 1, Function_meanImput)
+subset_control_intermediair = apply(subset_control_intermediair, 1, Function_meanImput)
+subset_treated_intermediair = apply(subset_treated_intermediair, 1, Function_meanImput)
+subset_control_resistent = apply(subset_control_resistent, 1, Function_meanImput)
+subset_treated_resistent = apply(subset_treated_resistent, 1, Function_meanImput)
+
+## Output data management
+# Revert the subsets to data frames
+subset_control_sensitive = data.frame(subset_control_sensitive)
+subset_treated_sensitive = data.frame(subset_treated_sensitive)
+subset_control_intermediair = data.frame(subset_control_intermediair)
+subset_treated_intermediair = data.frame(subset_treated_intermediair)
+subset_control_resistent = data.frame(subset_control_resistent)
+subset_treated_resistent = data.frame(subset_treated_resistent)
+
+# Transpose the column- and row names
+subset_control_sensitive = t(subset_control_sensitive)
+subset_treated_sensitive = t(subset_treated_sensitive)
+subset_control_intermediair = t(subset_control_intermediair)
+subset_treated_intermediair = t(subset_treated_intermediair)
+subset_control_resistent = t(subset_control_resistent)
+subset_treated_resistent = t(subset_treated_resistent)
+
+# Reassemble the 6 separate data frames into one full data set
+Data_Imput = as.data.frame(cbind(subset_control_sensitive, subset_treated_sensitive, subset_control_intermediair, subset_treated_intermediair, subset_control_resistent, subset_treated_resistent))
+
+# Remove the subset files
+rm(subset_control_sensitive)
+rm(subset_treated_sensitive)
+rm(subset_control_intermediair)
+rm(subset_treated_intermediair)
+rm(subset_control_resistent)
+rm(subset_treated_resistent)
+
 #### Visualization of the data ####
 # Boxplots will be drawn before- and after normalization, to identify interactions, outliers, and the spread of the data. As well as the assumptions needed for the 2-way ANOVA.
 
 #### Boxplot before normalization ####
 # Set up the data, and transform however needed
-Data_BNorm = melt(ProtTab_Full[,IdxIntensCol]) # All the data is melted from a many-column table, to a 2 column one
-Data_BNormNoZero = subset(Data_BNorm, value !=0) # Remove all values that are 0
+Data_BNorm = melt(Data_Imput[,IdxIntensCol]) # All the data is melted from a many-column table, to a 2 column one
 Data_BNormNoZero$value = log2(Data_BNormNoZero$value) # Make a log2 of all data
 
 # Add a column containing information based on which the point color is defined
