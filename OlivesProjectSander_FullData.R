@@ -51,12 +51,26 @@ labelTreatmentStrainUnique = unique(labelTreatmentStrainRep) # The duplicates ar
 
 
 
-#### Median normalization ####
-ProtTab_Norm = ProtTab_Full # The new table for the normalized data
-overallMedian = median(as.vector(as.matrix(ProtTab_Full[,IdxIntensCol]))) # The overall median is calculated and used as a point for normalization
+#### Histogram before mean imputation and normalization ####
+## Data preparation
+# Subset the relevant data
+DummyFrame = ProtTab_Full[, 9:44]
 
-ProtTab_Norm[,IdxIntensCol] = apply(ProtTab_Full[,IdxIntensCol], 2, function(x){ # On the intensity columns, a function is applied per column
-  x*overallMedian/median(x[which(x>0)])}) # This involves calculating the median for all values above 0, then calculating the ratio between the overall median and this column median, and normalizing each value in the column with it.
+# Calculate the log2 of all the intensities
+DummyFrame = log2(DummyFrame)
+
+# Convert the data into a long format
+Data_Hist_BNorm = pivot_longer(DummyFrame, cols = everything(), names_to = "Column", values_to = "log2_Intensity")
+rm(DummyFrame)
+
+## Draw the histogram
+PlotHist_intensityBNorm = hist(Data_Hist_BNorm$log2_Intensity, breaks = 30, col = "skyblue",
+                         xlab = "log2(Intensity)", ylab = "Frequency",
+                         main = "log2(Intensity) distribution before normalization and imputation")
+
+## Save the histogram
+dev.copy(png, "Intensity_Distribution_BeforeNormImput.png", width = 8, height = 6, units = "in", res = 300)
+dev.off()
 
 
 
@@ -66,7 +80,7 @@ ProtTab_Norm[,IdxIntensCol] = apply(ProtTab_Full[,IdxIntensCol], 2, function(x){
 
 ## Prepare the data
 # Subset the data to remove unnecessary columns
-Data_Imput = ProtTab_Norm[, c(3, 9:44)]
+Data_Imput = ProtTab_Full[, c(3, 9:44)]
 
 # Make 6 subsets for individual triplicates, so they can be imputed later with greater ease
 # Subset: Control_Sensitive
@@ -142,12 +156,93 @@ rm(subset_treated_resistent)
 
 
 
+#### Imputation: Remove those proteins which still lack data ####
+Data_Imput_NoZero = Data_Imput[rowSums(Data_Imput == 0) == 0, ]
+
+#### Imputation: Replace 0 values with lowest non-0 value ####
+Value_Lowest = min(Data_Imput[Data_Imput > 0], na.rm = TRUE)
+Data_Imput_Replace = Data_Imput
+Data_Imput_Replace[Data_Imput_Replace == 0] = Value_Lowest
+rm(Value_Lowest)
+
+
+
+
+#### Median normalization ####
+### No zero imputation file
+ProtTab_ANorm_NoZero = Data_Imput_NoZero # The new table for the normalized data
+Value_overallMedian = median(as.vector(as.matrix(Data_Imput_NoZero))) # The overall median is calculated and used as a point for normalization
+
+ProtTab_ANorm_NoZero = apply(Data_Imput_NoZero, 2, function(x){ # On the intensity columns, a function is applied per column
+  x*Value_overallMedian/median(x[which(x>0)])}) # This involves calculating the median for all values above 0, then calculating the ratio between the overall median and this column median, and normalizing each value in the column with it.
+
+# Convert the data to log2(intensity) and set the file as a data frame
+ProtTab_ANorm_NoZero = as.data.frame(log2(ProtTab_ANorm_NoZero))
+
+# Remove excess files
+rm(Value_overallMedian)
+
+
+### Zero replacement file
+ProtTab_ANorm_Replace = Data_Imput_Replace
+Value_overallMedian = median(as.vector(as.matrix(Data_Imput_Replace)))
+
+ProtTab_ANorm_Replace = apply(Data_Imput_Replace, 2, function(x){
+  x*Value_overallMedian/median(x[which(x>0)])})
+
+# Convert the data to log2(intensity) and set the file as a data frame
+ProtTab_ANorm_Replace = as.data.frame(log2(ProtTab_ANorm_Replace))
+
+# Remove excess files
+rm(Value_overallMedian)
+
+
+#### Histogram to show log2(intensity) distribution after normalization and mean imputation, while removing those proteins that had too little data
+## Data preparation
+# Subset the relevant data
+DummyFrame = ProtTab_ANorm_NoZero
+
+# Convert the data into a long format
+Data_Hist_ANorm_NoZero = pivot_longer(as.data.frame(DummyFrame), cols = everything(), names_to = "Column", values_to = "log2_Intensity")
+rm(DummyFrame)
+
+## Draw the histogram
+PlotHist_intensityANorm = hist(Data_Hist_ANorm_NoZero$log2_Intensity, breaks = 30, col = "skyblue",
+                               xlab = "log2(Intensity)", ylab = "Frequency",
+                               main = "log2(Intensity) distribution after normalization, mean imputation and zero removal")
+
+## Save the histogram
+dev.copy(png, "Intensity_Distribution_AfterNormImput_NoZero.png", width = 8, height = 6, units = "in", res = 300)
+dev.off()
+
+
+#### Histogram to show log2(intensity) distribution after normalization and mean imputation, while replacing 0-values with the lowest non-0 value in the entire dataset
+## Data preparation
+# Subset the relevant data
+DummyFrame = ProtTab_ANorm_Replace
+
+# Convert the data into a long format
+Data_Hist_ANorm_Replace = pivot_longer(as.data.frame(DummyFrame), cols = everything(), names_to = "Column", values_to = "log2_Intensity")
+rm(DummyFrame)
+
+## Draw the histogram
+PlotHist_intensityANorm_Replace = hist(Data_Hist_ANorm_Replace$log2_Intensity, breaks = 30, col = "skyblue",
+                               xlab = "log2(Intensity)", ylab = "Frequency",
+                               main = "log2(Intensity) distribution after normalization, mean imputation and zero replacement")
+
+## Save the histogram
+dev.copy(png, "Intensity_Distribution_AfterNormImput_Replace.png", width = 8, height = 6, units = "in", res = 300)
+dev.off()
+
+
+
+
 #### Visualization of the data ####
 # Boxplots will be drawn before- and after normalization, to identify interactions, outliers, and the spread of the data. As well as the assumptions needed for the 2-way ANOVA.
 
 #### Boxplot before normalization ####
 # Set up the data, and transform however needed
-Data_BNorm = melt(Data_Imput[,IdxIntensCol]) # All the data is melted from a many-column table, to a 2 column one
+Data_BNorm = melt(Data_Imput) # All the data is melted from a many-column table, to a 2 column one
 Data_BNormNoZero$value = log2(Data_BNormNoZero$value) # Make a log2 of all data
 
 # Add a column containing information based on which the point color is defined
