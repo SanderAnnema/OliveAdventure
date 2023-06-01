@@ -139,6 +139,9 @@ rm(subset_treated_intermediair)
 rm(subset_control_resistent)
 rm(subset_treated_resistent)
 
+
+
+
 #### Visualization of the data ####
 # Boxplots will be drawn before- and after normalization, to identify interactions, outliers, and the spread of the data. As well as the assumptions needed for the 2-way ANOVA.
 
