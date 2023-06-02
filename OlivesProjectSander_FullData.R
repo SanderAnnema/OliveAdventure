@@ -240,9 +240,11 @@ dev.off()
 #### Visualization of the data ####
 # Boxplots will be drawn before- and after normalization, to identify interactions, outliers, and the spread of the data. As well as the assumptions needed for the 2-way ANOVA.
 
-#### Boxplot before normalization ####
+#### Boxplot before normalization, no imput, remove those proteins where there's even one value that is 0 ####
 # Set up the data, and transform however needed
-Data_BNorm = melt(Data_Imput) # All the data is melted from a many-column table, to a 2 column one
+DummyFrame1 = ProtTab_Full[IdxIntensCol]
+DummyFrame2 = DummyFrame1[rowSums(DummyFrame1 == 0) == 0, ]
+Data_BNormNoZero = melt(DummyFrame2) # All the data is melted from a many-column table, to a 2 column one
 Data_BNormNoZero$value = log2(Data_BNormNoZero$value) # Make a log2 of all data
 
 # Add a column containing information based on which the point color is defined
@@ -258,12 +260,12 @@ labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
 
 # Make the boxplot of the data before normalization
 BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
-Plot_boxBNorm = ggplot(Data_BNormNoZero, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution before normalization", y = "log2(intensity)", x = "samples") +
+Plot_boxBNormNoZero = ggplot(Data_BNormNoZero, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution before normalization", y = "log2(intensity)", x = "samples") +
   geom_violin(aes(col = color)) + geom_boxplot(outlier.color = "black", col = labelStraincolor, width=0.21) + BoxplotFormat1
 
 ## Print the plot and save it as a PNG
-print(Plot_boxBNorm)
-ggsave("non_normalized_data.png", plot = Plot_boxBNorm,
+print(Plot_boxBNormNoZero)
+ggsave("non_normalized_data_Full.png", plot = Plot_boxBNormNoZero,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
 
