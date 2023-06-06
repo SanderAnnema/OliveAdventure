@@ -315,7 +315,7 @@ Data_Imput_log2 = log2(Data_Imput)
 
 
 
-#### Imputation: Remove those proteins which still lack data ####
+#### Imputation method 1: Remove those proteins which still lack data ####
 ## All the visualization and extra code will be written immediately below it. Then the replacement imputation method will be below that.
 Data_ImpNoZero = Data_Imput[rowSums(Data_Imput == 0) == 0, ]
 Data_ImpNoZero_log2 = Data_Imput_log2[rowSums(Data_Imput == 0) == 0, ]
@@ -323,12 +323,12 @@ Data_ImpNoZero_log2 = Data_Imput_log2[rowSums(Data_Imput == 0) == 0, ]
 
 
 
-#### Histogram to show log2(intensity) distribution after normalization and mean imputation, while removing those proteins that had too little data
+#### Histogram to show log2(intensity) distribution after normalization and mean imputation, while removing those proteins that had too little data ####
 # Convert the data into a long format
-Data_Hist_ANorm_NoZero = pivot_longer(as.data.frame(Data_ImpNoZero_log2), cols = everything(), names_to = "Column", values_to = "log2_Intensity")
+Data_Hist_ANorm_NoZero_long = pivot_longer(as.data.frame(Data_ImpNoZero_log2), cols = everything(), names_to = "variable", values_to = "log2_Intensity")
 
 ## Draw the histogram
-PlotHist_intensityANorm = hist(Data_Hist_ANorm_NoZero$log2_Intensity, breaks = 30, col = "skyblue",
+Plot_Hist_intensityANorm = hist(Data_Hist_ANorm_NoZero_long$log2_Intensity, breaks = 30, col = "skyblue",
                                xlab = "log2(Intensity)", ylab = "Frequency",
                                main = "log2(Intensity) distribution after normalization, mean imputation and zero removal")
 
@@ -340,15 +340,11 @@ dev.off()
 
 
 #### Boxplot after normalization, mean imputation and removing proteins lacking data ####
-# Set up the data, and transform however needed (Same as before, just changed the data origin)
-Data_ImpNoZero_log2_long = Data_ImpNoZero_log2 %>%
-  pivot_longer(cols = everything(), names_to = "variable", values_to = "value")
-
-# Add a column containing information based on which the point color is defined (just changed the data origin)
-Data_ImpNoZero_log2_long = cbind(Data_ImpNoZero_log2_long, apply(as.data.frame(Data_ImpNoZero_log2_long$variable), 1, function(x){
+# To the long NoZero imputation file made for the histogram, add a column containing information based on which the point color is defined 
+Data_Hist_ANorm_NoZero_long = cbind(Data_Hist_ANorm_NoZero_long, apply(as.data.frame(Data_Hist_ANorm_NoZero_long$variable), 1, function(x){
   unlist(strsplit(as.character(x), "_"))[2] # From the 'variable' column (which contains sample names) the 2nd word of the variable is taken and put in the new column
 }))
-colnames(Data_ImpNoZero_log2_long)[3] = "color" # Rename the 3rd column to "color"
+colnames(Data_Hist_ANorm_NoZero_long)[3] = "color" # Rename the 3rd column to "color"
 
 # Make a vector of the colors which the datapoints in the plots should have (same as before)
 labelStraincolor = gsub ("Resistent", "green", labelStrain)
@@ -357,7 +353,7 @@ labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
 
 # Make the boxplot of the data before normalization
 BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
-Plot_Box_ImpNoZero = ggplot(Data_ImpNoZero_log2_long, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization", y = "log2(intensity)", x = "samples") +
+Plot_Box_ImpNoZero = ggplot(Data_Hist_ANorm_NoZero_long, aes(x = variable, y = log2_Intensity)) + labs(title = "log2 intensity distribution after normalization and NoZero imputation", y = "log2(intensity)", x = "samples") +
   geom_violin(aes(col = color)) + geom_boxplot(outlier.color = "black", col = labelStraincolor, width=0.21) + BoxplotFormat1
 
 ## Print the plot and save it as a PNG
@@ -398,6 +394,12 @@ Data_Amean_ImpNoZero_wide = Data_Amean_ImpNoZero_long %>%
 # Remove the dummy frame
 rm(DummyFrame1)
 
+# Ensure that the data frame is in fact a data frame
+Data_Amean_ImpNoZero_wide = as.data.frame(Data_Amean_ImpNoZero_wide)
+
+# Set the 'accession' column as the row names
+row.names(Data_Amean_ImpNoZero_wide) = Data_Amean_ImpNoZero_wide$accession
+Data_Amean_ImpNoZero_wide$accession = NULL
 
 
 
@@ -432,50 +434,45 @@ ggsave("Averaged_ImpNoZero_Full.png", plot = Plot_Box_AMean_ImpNoZero,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
 
+
+
 # ------------- The section below here is the same as the section above, but differs in the method of imputation -------------
 # Instead of removing those proteins with even one value that is 0, here the 0 values are replaced with the lowest non-0 value after normalization
 
-#### Imputation: Replace 0 values with lowest non-0 value ####
+#### Imputation method 2: Replace 0 values with lowest non-0 value ####
 Value_Lowest = min(Data_Imput[Data_Imput > 0], na.rm = TRUE)
 Data_Imput_Replace = Data_Imput
 Data_Imput_Replace[Data_Imput_Replace == 0] = Value_Lowest
 rm(Value_Lowest)
 
+# Also make a log2 variant of the data frame
+Data_Imput_Replace_log2 = log2(Data_Imput_Replace)
 
 
 
-#### Histogram to show log2(intensity) distribution after normalization and mean imputation, while replacing 0-values with the lowest non-0 value in the entire dataset
-## Data preparation
-# Subset the relevant data
-DummyFrame = ProtTab_ANorm_Replace
-
+#### Histogram to show log2(intensity) distribution after normalization and mean imputation, and replacing 0-values with the lowest non-0 value ####
 # Convert the data into a long format
-Data_Hist_ANorm_Replace = pivot_longer(as.data.frame(DummyFrame), cols = everything(), names_to = "Column", values_to = "log2_Intensity")
-rm(DummyFrame)
+Data_ImpRep_log2_long = Data_Imput_Replace_log2 %>%
+  pivot_longer(cols = everything(), names_to = "variable", values_to = "value")
 
 ## Draw the histogram
-PlotHist_intensityANorm_Replace = hist(Data_Hist_ANorm_Replace$log2_Intensity, breaks = 30, col = "skyblue",
+Plot_Hist_Intens_ImpRep = hist(Data_ImpRep_log2_long$value, breaks = 30, col = "skyblue",
                                xlab = "log2(Intensity)", ylab = "Frequency",
                                main = "log2(Intensity) distribution after normalization, mean imputation and zero replacement")
 
 ## Save the histogram
-dev.copy(png, "Intensity_Distribution_AfterNormImput_Replace_Full.png", width = 8, height = 6, units = "in", res = 300)
+dev.copy(png, "Intensity_Distribution_ANorm_ImpRep_Full.png", width = 8, height = 6, units = "in", res = 300)
 dev.off()
 
 
 
 
-#### Boxplot after normalization, mean imputation and removing proteins lacking data ####
-# Set up the data, and transform however needed (Same as before, just changed the data origin)
-Data_ANorm = melt(ProtTab_Norm[,IdxIntensCol]) # All the data is melted from a many-column table, to a 2 column one. Unlike before, the normalization table is used
-Data_ANormNoZero = subset(Data_ANorm, value !=0) # Remove all values that are 0
-Data_ANormNoZero$value = log2(Data_ANormNoZero$value) # Make a log2 of all data
-
-# Add a column containing information based on which the point color is defined (just changed the data origin)
-Data_ANormNoZero = cbind(Data_ANormNoZero, apply(as.data.frame(Data_ANormNoZero$variable), 1, function(x){
+#### Boxplot after normalization, mean imputation and replacing missing values ####
+# To the long NoZero imputation file made for the histogram, add a column containing information based on which the point color is defined 
+Data_ImpRep_log2_long = cbind(Data_ImpRep_log2_long, apply(as.data.frame(Data_ImpRep_log2_long$variable), 1, function(x){
   unlist(strsplit(as.character(x), "_"))[2] # From the 'variable' column (which contains sample names) the 2nd word of the variable is taken and put in the new column
 }))
-colnames(Data_ANormNoZero)[3] = "color" # Rename the 3rd column to "color"
+colnames(Data_ImpRep_log2_long)[3] = "color" # Rename the 3rd column to "color"
 
 # Make a vector of the colors which the datapoints in the plots should have (same as before)
 labelStraincolor = gsub ("Resistent", "green", labelStrain)
@@ -484,49 +481,71 @@ labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
 
 # Make the boxplot of the data before normalization
 BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
-Plot_boxANorm = ggplot(Data_ANormNoZero, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization", y = "log2(intensity)", x = "samples") +
+Plot_Box_ImpRep = ggplot(Data_ImpRep_log2_long, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization and zero replacement", y = "log2(intensity)", x = "samples") +
   geom_violin(aes(col = color)) + geom_boxplot(outlier.color = "black", col = labelStraincolor, width=0.21) + BoxplotFormat1
 
 ## Print the plot and save it as a PNG
-print(Plot_boxANorm)
-ggsave("normalized_data.png", plot = Plot_boxANorm,
+print(Plot_Box_ImpRep)
+ggsave("normalized_imput_Replace_Full.png", plot = Plot_Box_ImpRep,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
 
 
 
-#### Averaging duplicates ####
-### The previous 2 plots contain duplicates of the same samples, so here they will be averaged
-
+#### Duplicate averageing after normalization, mean imputation, and replacing missing values ####
 ## Create a dummy frame for the calculations
-DummyFrame = Data_ANorm # Create a dummy dataframe to contain the list of normalized intensity per sample.
-DummyFrame$variable = gsub("_(1|2)$", "", DummyFrame$variable) # Remove the final '_1' or '_2' so that in the next step the duplicates can be grouped and averaged.
-Accession = ProtTab_Norm$Accession # Generate an object containing the Accession numbers.
-DummyFrame$accession = rep(Accession, length.out = nrow(Data_ANorm)) # Add a new column to the dummy dataframe containing the accession numbers, repeating the list for every sample.
-DummyFrame = DummyFrame[, c("accession", "variable", "value")] # Reorganize the dataframe
+# Create a dummy dataframe to contain the list of normalized (before log2) intensity per sample.
+DummyFrame1 = Data_Imput_Replace %>%
+  pivot_longer(cols = everything(), names_to = "variable", values_to = "value")
+
+# Remove the final '_1' or '_2' so that in the next step the duplicates can be grouped and averaged.
+DummyFrame1$variable = gsub("_(1|2)$", "", DummyFrame1$variable) 
+
+# Generate an object containing the Accession numbers.
+Accession = rownames(Data_Imput_Replace)
+
+# Add a new column to the dummy dataframe containing the accession numbers, repeating the list for every sample.
+DummyFrame1$accession = rep(Accession, each = 36) 
+
+# Reorganize the dataframe
+DummyFrame1 = DummyFrame1[, c("accession", "variable", "value")] 
 
 # Now each value that has the same Accession number and the same sample duplicate can be averaged.
-df_mean = aggregate(value ~ accession + variable, data = DummyFrame, function(x) {
+Data_Amean_ImpRep_long = aggregate(value ~ accession + variable, data = DummyFrame1, function(x) {
   mean(x[x != 0])
 })
 
 # Cast the modified melted dataframe back into a wide format
-ProtTab_Nonred = dcast(df_mean, accession ~ variable, value.var = "value")
+Data_Amean_ImpRep_wide = Data_Amean_ImpRep_long %>%
+  pivot_wider(names_from = variable, values_from = value)
+
+# Remove the dummy frame
+rm(DummyFrame1)
+
+# Ensure that the data frame is in fact a data frame
+Data_Amean_ImpRep_wide = as.data.frame(Data_Amean_ImpRep_wide)
+
+# Set the 'accession' column as the row names
+row.names(Data_Amean_ImpRep_wide) = Data_Amean_ImpRep_wide$accession
+Data_Amean_ImpRep_wide$accession = NULL
 
 
 
 
-#### Plot the averaged data in a boxplot ####
-# Set up the data, and transform however needed. Different here, though the principle is the same
-Data_AMean = df_mean[c("variable", "value")]
-Data_AMeanNoZero = subset(Data_AMean, value !=0) # Remove all values that are 0
-Data_AMeanNoZero$value = log2(Data_AMeanNoZero$value) # Make a log2 of all data
+#### Plot the averaged post-imputation (Replace) data in a boxplot ####
+## Set up the data, and transform however needed.
+Data_Box_Amean_ImpRep_log2 = Data_Amean_ImpRep_long[c("variable", "value")]
+
+# Make a log2 of all data
+Data_Box_Amean_ImpRep_log2$value = log2(Data_Box_Amean_ImpRep_log2$value) 
 
 # Add a column containing information based on which the point color is defined (just changed the data origin)
-Data_AMeanNoZero = cbind(Data_AMeanNoZero, apply(as.data.frame(Data_AMeanNoZero$variable), 1, function(x){
+Data_Box_Amean_ImpRep_log2 = cbind(Data_Box_Amean_ImpRep_log2, apply(as.data.frame(Data_Box_Amean_ImpRep_log2$variable), 1, function(x){
   unlist(strsplit(as.character(x), "_"))[2] # From the 'variable' column (which contains sample names) the 2nd word of the variable is taken and put in the new column
 }))
-colnames(Data_AMeanNoZero)[3] = "color" # Rename the 3rd column to "color"
+
+# Rename the 3rd column to "color"
+colnames(Data_Box_Amean_ImpRep_log2)[3] = "color" 
 
 # Make a vector of the colors which the datapoints in the plots should have (same as before)
 labelStraincolor = gsub ("Resistent", "green", labelStrain)
@@ -535,15 +554,16 @@ labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
 
 # Make the boxplot of the data before normalization
 BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
-Plot_boxAMean = ggplot(Data_AMeanNoZero, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization and duplicate averageing", y = "log2(intensity)", x = "samples") +
+Plot_Box_AMean_ImpRep = ggplot(Data_Box_Amean_ImpRep_log2, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization, duplicate averageing, mean imputation, and zero replacement", y = "log2(intensity)", x = "samples") +
   geom_violin(aes(col = color)) + geom_boxplot(outlier.color = "black", aes(color = color), width=0.21) + BoxplotFormat1
 
 ## Print the plot and save it as a PNG
-print(Plot_boxAMean)
-ggsave("averaged_data_Full.png", plot = Plot_boxAMean,
+print(Plot_Box_AMean_ImpRep)
+ggsave("Averaged_ImpRep_Full.png", plot = Plot_Box_AMean_ImpRep,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
 
+# ------------ The stuff below here still needs to be finished. Depending on how we decide to handle remaining zeros ---------
 
 
 #### Differential expression analysis with a 2-way ANOVA between controls and treated samples ####
