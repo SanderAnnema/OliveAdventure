@@ -64,7 +64,7 @@ Data_Hist_BNorm = pivot_longer(DummyFrame, cols = everything(), names_to = "Colu
 rm(DummyFrame)
 
 ## Draw the histogram
-PlotHist_intensityBNorm = hist(Data_Hist_BNorm$log2_Intensity, breaks = 30, col = "skyblue",
+Plot_Hist_intensityBNorm = hist(Data_Hist_BNorm$log2_Intensity, breaks = 30, col = "skyblue",
                          xlab = "log2(Intensity)", ylab = "Frequency",
                          main = "log2(Intensity) distribution before normalization and imputation")
 
@@ -79,20 +79,20 @@ dev.off()
 DummyFrame = ProtTab_Full[IdxIntensCol]
 
 # Turn the DummyFrame into a long data frame
-Data_Box_BNormNoZero = DummyFrame %>%
+Data_Box_BNorm_NoZero = DummyFrame %>%
   pivot_longer(cols = everything(), names_to = "variable", values_to = "value")
 
 # Remove the proteins with even one value that is 0
-Data_Box_BNormNoZero = subset(Data_Box_BNormNoZero, value !=0)
+Data_Box_BNorm_NoZero = subset(Data_Box_BNorm_NoZero, value !=0)
 
 # Log2 of the data
-Data_Box_BNormNoZero$value = log2(Data_Box_BNormNoZero$value)
+Data_Box_BNorm_NoZero$value = log2(Data_Box_BNorm_NoZero$value)
 
 # Add a column containing information based on which the point color is defined
-Data_Box_BNormNoZero = cbind(Data_Box_BNormNoZero, apply(as.data.frame(Data_Box_BNormNoZero$variable), 1, function(x){
+Data_Box_BNorm_NoZero = cbind(Data_Box_BNorm_NoZero, apply(as.data.frame(Data_Box_BNorm_NoZero$variable), 1, function(x){
   unlist(strsplit(as.character(x), "_"))[2] # From the 'variable' column (which contains sample names) the 2nd word of the variable is taken and put in the new column
 }))
-colnames(Data_Box_BNormNoZero)[3] = "color" # Rename the 3rd column to "color"
+colnames(Data_Box_BNorm_NoZero)[3] = "color" # Rename the 3rd column to "color"
 
 # Make a vector of the colors which the datapoints in the plots should have
 labelStraincolor = gsub ("Resistent", "green", labelStrain)
@@ -101,14 +101,14 @@ labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
 
 # Make the boxplot of the data before normalization
 BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
-Plot_boxBNormNoZero = ggplot(Data_Box_BNormNoZero, aes(x = variable, y = value)) + 
+Plot_Box_BNorm_NoZero = ggplot(Data_Box_BNorm_NoZero, aes(x = variable, y = value)) + 
   labs(title = "log2 intensity distribution before normalization", y = "log2(intensity)", x = "samples") +
   geom_violin(aes(col = color)) + 
   geom_boxplot(outlier.color = "black", col = labelStraincolor, width=0.21) + BoxplotFormat1
 
 ## Print the plot and save it as a PNG
-print(Plot_boxBNormNoZero)
-ggsave("non_normalized_data_Full.png", plot = Plot_boxBNormNoZero,
+print(Plot_Box_BNorm_NoZero)
+ggsave("non_normalized_data_Full.png", plot = Plot_Box_BNorm_NoZero,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 rm(DummyFrame)
 
@@ -158,12 +158,12 @@ labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
 
 # Make the boxplot of the data before normalization
 BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
-Plot_boxANorm = ggplot(Data_ANorm_log2_long_NoZero, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization", y = "log2(intensity)", x = "samples") +
+Plot_Box_ANorm = ggplot(Data_ANorm_log2_long_NoZero, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization", y = "log2(intensity)", x = "samples") +
   geom_violin(aes(col = color)) + geom_boxplot(outlier.color = "black", col = labelStraincolor, width=0.21) + BoxplotFormat1
 
 ## Print the plot and save it as a PNG
-print(Plot_boxANorm)
-ggsave("normalized_data_Full.png", plot = Plot_boxANorm,
+print(Plot_Box_ANorm)
+ggsave("normalized_data_Full.png", plot = Plot_Box_ANorm,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
 
@@ -229,12 +229,12 @@ labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
 
 # Make the boxplot of the data before normalization
 BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
-Plot_boxAMean = ggplot(Data_AMean_NoZero_log2, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization and duplicate averageing", y = "log2(intensity)", x = "samples") +
+Plot_Box_AMean = ggplot(Data_AMean_NoZero_log2, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization and duplicate averageing", y = "log2(intensity)", x = "samples") +
   geom_violin(aes(col = color)) + geom_boxplot(outlier.color = "black", aes(color = color), width=0.21) + BoxplotFormat1
 
 ## Print the plot and save it as a PNG
-print(Plot_boxAMean)
-ggsave("averaged_data_Full.png", plot = Plot_boxAMean,
+print(Plot_Box_AMean)
+ggsave("averaged_data_Full.png", plot = Plot_Box_AMean,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
 
@@ -357,12 +357,12 @@ labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
 
 # Make the boxplot of the data before normalization
 BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
-Plot_box_ImpNoZero = ggplot(Data_ImpNoZero_log2_long, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization", y = "log2(intensity)", x = "samples") +
+Plot_Box_ImpNoZero = ggplot(Data_ImpNoZero_log2_long, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization", y = "log2(intensity)", x = "samples") +
   geom_violin(aes(col = color)) + geom_boxplot(outlier.color = "black", col = labelStraincolor, width=0.21) + BoxplotFormat1
 
 ## Print the plot and save it as a PNG
-print(Plot_box_ImpNoZero)
-ggsave("normalized_imput_NoZero_Full.png", plot = Plot_box_ImpNoZero,
+print(Plot_Box_ImpNoZero)
+ggsave("normalized_imput_NoZero_Full.png", plot = Plot_Box_ImpNoZero,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
 
@@ -399,25 +399,22 @@ Data_Amean_ImpNoZero_wide = Data_Amean_ImpNoZero_long %>%
 rm(DummyFrame1)
 
 
-# ---------------------------- Working on the section below here
 
-#### Plot the averaged post-imputation data in a boxplot ####
+
+#### Plot the averaged post-imputation (NoZero) data in a boxplot ####
 ## Set up the data, and transform however needed.
-Data_AMean_NoZero = Data_Amean_NoZero_long[c("variable", "value")]
-
-# Remove all values that are 0
-Data_AMean_NoZero_log2 = subset(Data_AMean, value !=0) 
+Data_Box_Amean_ImpNoZero_log2 = Data_Amean_ImpNoZero_long[c("variable", "value")]
 
 # Make a log2 of all data
-Data_AMean_NoZero_log2$value = log2(Data_AMean_NoZero_log2$value) 
+Data_Box_Amean_ImpNoZero_log2$value = log2(Data_Box_Amean_ImpNoZero_log2$value) 
 
 # Add a column containing information based on which the point color is defined (just changed the data origin)
-Data_AMean_NoZero_log2 = cbind(Data_AMean_NoZero_log2, apply(as.data.frame(Data_AMean_NoZero_log2$variable), 1, function(x){
+Data_Box_Amean_ImpNoZero_log2 = cbind(Data_Box_Amean_ImpNoZero_log2, apply(as.data.frame(Data_Box_Amean_ImpNoZero_log2$variable), 1, function(x){
   unlist(strsplit(as.character(x), "_"))[2] # From the 'variable' column (which contains sample names) the 2nd word of the variable is taken and put in the new column
 }))
 
 # Rename the 3rd column to "color"
-colnames(Data_AMean_NoZero_log2)[3] = "color" 
+colnames(Data_Box_Amean_ImpNoZero_log2)[3] = "color" 
 
 # Make a vector of the colors which the datapoints in the plots should have (same as before)
 labelStraincolor = gsub ("Resistent", "green", labelStrain)
@@ -426,17 +423,18 @@ labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
 
 # Make the boxplot of the data before normalization
 BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
-Plot_boxAMean = ggplot(Data_AMean_NoZero_log2, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization and duplicate averageing", y = "log2(intensity)", x = "samples") +
+Plot_Box_AMean_ImpNoZero = ggplot(Data_Box_Amean_ImpNoZero_log2, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization, duplicate averageing, and NoZero imputation", y = "log2(intensity)", x = "samples") +
   geom_violin(aes(col = color)) + geom_boxplot(outlier.color = "black", aes(color = color), width=0.21) + BoxplotFormat1
 
 ## Print the plot and save it as a PNG
-print(Plot_boxAMean)
-ggsave("averaged_data_Full.png", plot = Plot_boxAMean,
+print(Plot_Box_AMean_ImpNoZero)
+ggsave("Averaged_ImpNoZero_Full.png", plot = Plot_Box_AMean_ImpNoZero,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
 
-# ------------------------------------ The section below here is similar to the section above, but replaces 0 values with the lowest non-0 value. It's also not done yet
-  
+# ------------- The section below here is the same as the section above, but differs in the method of imputation -------------
+# Instead of removing those proteins with even one value that is 0, here the 0 values are replaced with the lowest non-0 value after normalization
+
 #### Imputation: Replace 0 values with lowest non-0 value ####
 Value_Lowest = min(Data_Imput[Data_Imput > 0], na.rm = TRUE)
 Data_Imput_Replace = Data_Imput
