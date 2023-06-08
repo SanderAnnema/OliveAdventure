@@ -39,8 +39,7 @@ PepTab_Full = read.csv(paste(DataFolder,PeptideFile, sep = ""), header =  TRUE)
 columnNames = gsub(".Intensity","", colnames(ProtTab_Full) [IdxIntensCol])
 colnames(ProtTab_Full) [IdxIntensCol] = columnNames
 
-# The data contains triplicate samples measured in duplicate of 2 factors (control and treated) and 3 groups (resistent, intermediair, sensitive).
-# To make handling specific data easier, for example when calculating averages, well-defined label objects are created.
+# Create object defining various labels, to be used in future code.
 labels = strsplit(columnNames, "_") # The column names are separated based on "_", so a table is formed with the following structure of columns: factor, group, replicate, measurement duplicate.
 labelTreatment = unlist(lapply(labels, function(x) x[1])) # The first column, treatment, is isolated
 labelStrain = unlist(lapply(labels, function(x) x[2])) # The second column, strain, is isolated
@@ -48,56 +47,80 @@ labelReplicate = unlist(lapply(labels, function(x) x[3])) # The third column, re
 labelTreatmentStrainRep = paste(labelTreatment, labelStrain, labelReplicate, sep = "_") # The three columns are reassembled into new labels containing only vital information
 labelTreatmentStrainUnique = unique(labelTreatmentStrainRep) # The duplicates are removed
 
+labelStraincolor = gsub ("Resistent", "green", labelStrain)
+labelStraincolor = gsub ("Intermediair", "red", labelStraincolor)
+labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
+
 
 
 
 #### Define the functions ####
 
 ### Pre-process data by subsetting the origin data, choosing whether or not to take the log2, and converting the data to a long format.
-Function_preprocessData <- function(data, index, takeLog2) {
+Function_preprocessData = function(data, index, takeLog2) {
   
 # Subset the data based on the provided index
-data_sub <- data[, c("variable", index)]
+data_sub = data[, index]
+
+if (NoZero) {
+  data_sub = data_sub %>%
+    filter(.data[[index]] != 0)
+}
 
 if (takeLog2) {
-  data_sub[[index]] <- log2(data_sub[[index]])
+  data_sub = log2(data_sub)
 }
 
 # Convert data to long format
-data_long <- gather(data_sub, key = "variable", value = "value")
+data_long = pivot_longer(data_sub, cols = everything(), names_to = "variable", values_to = "value")
 
 return(data_long)
 }
 
-### Removing proteins with even one zero value
-Function_removeZeros <- function(data) {
-  data_filtered <- data %>%
+### Removing proteins with even one zero value and returning the log2 of the remaining values
+Function_removeZeros = function(data, takeLog2) {
+  data_filtered = data %>%
     filter(.data[["value"]] != 0)
+  
+  if (takeLog2) {
+    data_filtered$value = log2(data_filtered$value)
+  }
   
   return(data_filtered)
 }
 
-### Drawing a box plot, involving the adding of a column defining the color based on the variable, defining the format of the box plot, and the drawing of the plot itself.
-Function_drawBoxplot <- function(data, title) {
-  # Add color column based on variable
-  data <- cbind(data, color = gsub("Resistent", "green", gsub("Intermediair", "red", gsub("Sensitive", "blue", data$variable))))
+### Drawing a histogram, involving only the plotting of the graph.
+Function_drawHistogram = function(data, title) {
+  # Create a data frame with a single column for the data
+  df = data.frame(value = data)
   
-  # Create the box plot
-  BoxplotFormat1 <- theme_classic() +
-    theme(axis.text.x = element_text(angle = 90, hjust = 1),
-          plot.title = element_text(family = "Helvetica", face = "bold", size = 15, hjust = 0.5))
-  
-  plot <- ggplot(data, aes(x = variable, y = value)) +
-    labs(title = title, y = "log2(intensity)", x = "samples") +
-    geom_violin(aes(col = color)) +
-    geom_boxplot(outlier.color = "black", aes(color = color), width = 0.21) +
-    BoxplotFormat1
-  
-  return(plot)
+  # Create the histogram plot using ggplot2
+  ggplot(df, aes(x = value)) +
+    geom_histogram(binwidth = 1, fill = "skyblue", color = "black") +
+    labs(x = "log2(Intensity)", y = "Frequency", title = title)
 }
 
+# ---------------------Below
+
+### ????????? Drawing a box plot, involving the adding of a column defining the color based on the variable, defining the format of the box plot, and the drawing of the plot itself.
+
+### Adding a column called 'color' to a dataframe and filling it with the strain types
+Function_add_colorColumn = function(data) {
+  data = cbind(data, apply(as.data.frame(data$variable), 1, function(x){
+    unlist(strsplit(as.character(x), "_"))[2]
+  }))
+  colnames(data)[3] = "color"
+}
+
+Data_Box_BNorm_NoZero = cbind(Data_Box_BNorm_NoZero, apply(as.data.frame(Data_Box_BNorm_NoZero$variable), 1, function(x){
+  unlist(strsplit(as.character(x), "_"))[2] # From the 'variable' column (which contains sample names) the 2nd word of the variable is taken and put in the new column
+}))
+colnames(Data_Box_BNorm_NoZero)[3] = "color" # Rename the 3rd column to "color"
+
+# ----------------------- Above
+
 ### Printing and saving the boxplot
-Function_boxPrintSave <- function(plot, filename) {
+Function_boxPrintSave = function(plot, filename) {
   # Print the plot
   print(plot)
   
@@ -105,56 +128,63 @@ Function_boxPrintSave <- function(plot, filename) {
   ggsave(filename, plot = plot, scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 }
 
+### Printing and saving the histogram.
+Function_saveHistogram = function(hist_plot, filename) {
+  # Save the histogram using ggsave()
+  ggsave(filename, plot = hist_plot, width = 8, height = 6, dpi = 300)
+}
+
+### Printing and saving the histogram or boxplot
+Function_savePlot = function(plot, filename,plotType) {
+  if (plotType == "boxplot") {
+    # Print the box plot
+    print(plot)
+    
+    # Save the box plot as a PNG
+    ggsave(filename, plot = plot, scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
+    
+  } else if (plotType == "histogram") {
+    # Print the box plot
+    print(plot)
+    
+    # Save the histogram
+    ggsave(filename, plot = plot, width = 8, height = 6, dpi = 300)
+  } else {
+    stop("Invalid plot type. Please specify 'boxplot' or 'histogram'.")
+  }
+}
 
 
 
 #### Histogram before mean imputation and normalization ####
 ## Data preparation
-# Subset the relevant data
-DummyFrame = ProtTab_Full[, 9:44]
-
-# Calculate the log2 of all the intensities
-DummyFrame = log2(DummyFrame)
-
-# Convert the data into a long format
-Data_Hist_BNorm = pivot_longer(DummyFrame, cols = everything(), names_to = "Column", values_to = "log2_Intensity")
-rm(DummyFrame)
+Data_Hist_BNorm = Function_preprocessData(ProtTab_Full, IdxIntensCol, takeLog2 = TRUE)
 
 ## Draw the histogram
-Plot_Hist_intensityBNorm = hist(Data_Hist_BNorm$log2_Intensity, breaks = 30, col = "skyblue",
-                         xlab = "log2(Intensity)", ylab = "Frequency",
-                         main = "log2(Intensity) distribution before normalization and imputation")
+Plot_Hist_intensityBNorm = Function_drawHistogram(Data_Hist_BNorm$value, "log2(Intensity) distribution before normalization and imputation")
 
 ## Save the histogram
-dev.copy(png, "Intensity_Distribution_BeforeNormImput_Full.png", width = 8, height = 6, units = "in", res = 300)
-dev.off()
+Function_savePlot(Plot_Hist_intensityBNorm, filename = "Intensity_Distribution_BeforeNormImput_Full.png", plotType = "histogram")
+
 
 
 
 #### Boxplot before normalization, no imputation, remove those proteins where there's even one value that is 0 ####
-# Set up the data
-DummyFrame = ProtTab_Full[IdxIntensCol]
+## Data preparation
+Data_Box_BNorm_NoZero = Function_preprocessData(ProtTab_Full, IdxIntensCol, takeLog2 = FALSE)
 
-# Turn the DummyFrame into a long data frame
-Data_Box_BNorm_NoZero = DummyFrame %>%
-  pivot_longer(cols = everything(), names_to = "variable", values_to = "value")
+# Remove the proteins with even one value that is 0, then take the log2 of the remaining values
+Data_Box_BNorm_NoZero = Function_removeZeros(Data_Box_BNorm_NoZero, takeLog2 = TRUE)
 
-# Remove the proteins with even one value that is 0
-Data_Box_BNorm_NoZero = subset(Data_Box_BNorm_NoZero, value !=0)
+# --------------
 
-# Log2 of the data
-Data_Box_BNorm_NoZero$value = log2(Data_Box_BNorm_NoZero$value)
-
-# Add a column containing information based on which the point color is defined
+# ????????????? Add a column containing information based on which the point color is defined
 Data_Box_BNorm_NoZero = cbind(Data_Box_BNorm_NoZero, apply(as.data.frame(Data_Box_BNorm_NoZero$variable), 1, function(x){
   unlist(strsplit(as.character(x), "_"))[2] # From the 'variable' column (which contains sample names) the 2nd word of the variable is taken and put in the new column
 }))
 colnames(Data_Box_BNorm_NoZero)[3] = "color" # Rename the 3rd column to "color"
 
-# Make a vector of the colors which the datapoints in the plots should have
-labelStraincolor = gsub ("Resistent", "green", labelStrain)
-labelStraincolor = gsub ("Intermediair", "red", labelStraincolor)
-labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
+# ------------
 
 # Make the boxplot of the data before normalization
 BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
@@ -163,11 +193,11 @@ Plot_Box_BNorm_NoZero = ggplot(Data_Box_BNorm_NoZero, aes(x = variable, y = valu
   geom_violin(aes(col = color)) + 
   geom_boxplot(outlier.color = "black", col = labelStraincolor, width=0.21) + BoxplotFormat1
 
+Plot_Box_BNorm_NoZero = Function_drawBoxplot(Data_Box_BNorm_NoZero, title = "log2 intensity distribution before normalization")
+
 ## Print the plot and save it as a PNG
-print(Plot_Box_BNorm_NoZero)
-ggsave("non_normalized_data_Full.png", plot = Plot_Box_BNorm_NoZero,
-       scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
-rm(DummyFrame)
+Function_savePlot(Plot_Box_BNorm_NoZero, filename = "non_normalized_data_Full.png", plotType = "boxplot")
+
 
 
 
