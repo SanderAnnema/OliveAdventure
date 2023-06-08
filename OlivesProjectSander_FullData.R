@@ -51,6 +51,63 @@ labelTreatmentStrainUnique = unique(labelTreatmentStrainRep) # The duplicates ar
 
 
 
+#### Define the functions ####
+
+### Pre-process data by subsetting the origin data, choosing whether or not to take the log2, and converting the data to a long format.
+Function_preprocessData <- function(data, index, takeLog2) {
+  
+# Subset the data based on the provided index
+data_sub <- data[, c("variable", index)]
+
+if (takeLog2) {
+  data_sub[[index]] <- log2(data_sub[[index]])
+}
+
+# Convert data to long format
+data_long <- gather(data_sub, key = "variable", value = "value")
+
+return(data_long)
+}
+
+### Removing proteins with even one zero value
+Function_removeZeros <- function(data) {
+  data_filtered <- data %>%
+    filter(.data[["value"]] != 0)
+  
+  return(data_filtered)
+}
+
+### Drawing a box plot, involving the adding of a column defining the color based on the variable, defining the format of the box plot, and the drawing of the plot itself.
+Function_drawBoxplot <- function(data, title) {
+  # Add color column based on variable
+  data <- cbind(data, color = gsub("Resistent", "green", gsub("Intermediair", "red", gsub("Sensitive", "blue", data$variable))))
+  
+  # Create the box plot
+  BoxplotFormat1 <- theme_classic() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1),
+          plot.title = element_text(family = "Helvetica", face = "bold", size = 15, hjust = 0.5))
+  
+  plot <- ggplot(data, aes(x = variable, y = value)) +
+    labs(title = title, y = "log2(intensity)", x = "samples") +
+    geom_violin(aes(col = color)) +
+    geom_boxplot(outlier.color = "black", aes(color = color), width = 0.21) +
+    BoxplotFormat1
+  
+  return(plot)
+}
+
+### Printing and saving the boxplot
+Function_boxPrintSave <- function(plot, filename) {
+  # Print the plot
+  print(plot)
+  
+  # Save the plot as a PNG file
+  ggsave(filename, plot = plot, scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
+}
+
+
+
+
 #### Histogram before mean imputation and normalization ####
 ## Data preparation
 # Subset the relevant data
