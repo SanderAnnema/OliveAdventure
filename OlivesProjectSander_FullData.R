@@ -47,10 +47,6 @@ labelReplicate = unlist(lapply(labels, function(x) x[3])) # The third column, re
 labelTreatmentStrainRep = paste(labelTreatment, labelStrain, labelReplicate, sep = "_") # The three columns are reassembled into new labels containing only vital information
 labelTreatmentStrainUnique = unique(labelTreatmentStrainRep) # The duplicates are removed
 
-labelStraincolor = gsub ("Resistent", "green", labelStrain)
-labelStraincolor = gsub ("Intermediair", "red", labelStraincolor)
-labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
-
 # Define plot formats
 BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
 
@@ -63,7 +59,11 @@ BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, 
 Function_preprocessData = function(data, index, NoZero, takeLog2) {
   
 # Subset the data based on the provided index
-data_sub = data[, index]
+if (!is.null(index)) {
+  data_sub = data[, index]
+} else {
+  data_sub = data
+}
 
 # Remove proteins with even one zero
 if (NoZero) {
@@ -107,10 +107,7 @@ Function_drawHistogram = function(data, title) {
 
 ### Adding a column called 'color' to a dataframe and filling it with the strain types
 Function_add_colorColumn = function(data) {
-  data = cbind(data, apply(as.data.frame(data$variable), 1, function(x){
-    unlist(strsplit(as.character(x), "_"))[2]
-  }))
-  colnames(data)[3] = "color"
+  data$color = sapply(strsplit(as.character(data$variable), "_"), function(x) x[2])
   return(data)
 }
 
@@ -118,8 +115,18 @@ Function_add_colorColumn = function(data) {
 Function_drawBoxplot = function(data, title) {
   plot = ggplot(data, aes(x = variable, y = value)) +
     labs(title = title, y = "log2(intensity)", x = "samples") +
+    geom_violin(aes(fill = color)) +
+    geom_boxplot(aes(color = color), outlier.color = "black", col = labelStraincolor, width = 0.21) +
+    BoxplotFormat1
+  
+  return(plot)
+}
+
+Function_drawBoxplot = function(data, title) {
+  plot = ggplot(data, aes(x = variable, y = value)) +
+    labs(title = title, y = "log2(intensity)", x = "samples") +
     geom_violin(aes(col = color)) +
-    geom_boxplot(outlier.color = "black", col = labelStraincolor, width = 0.21) +
+    geom_boxplot(outlier.color = "black", width = 0.21) +
     BoxplotFormat1
   
   return(plot)
@@ -159,6 +166,7 @@ Function_savePlot = function(plot, filename,plotType) {
     stop("Invalid plot type. Please specify 'boxplot' or 'histogram'.")
   }
 }
+
 
 
 
@@ -217,10 +225,12 @@ rm(Value_overallMedian)
 
 
 #### Boxplot after normalization, but before imputation ####
-# Set up the data, and transform however needed (Same as before, just changed the data origin)
+# Set up the data, and transform however needed
 Data_ANorm_log2_long = Data_ANorm_log2 %>%
   pivot_longer(cols = everything(), names_to = "variable", values_to = "value")
 Data_ANorm_log2_long_NoZero = subset(Data_ANorm_log2_long, value !=0) # Remove all values that are 0
+
+# ???? Data_ANorm_log2_long = Function_preprocessData(Data_ANorm_log2, index = NULL, )
 
 # Add a column containing information based on which the point color is defined (just changed the data origin)
 Data_ANorm_log2_long_NoZero = cbind(Data_ANorm_log2_long_NoZero, apply(as.data.frame(Data_ANorm_log2_long_NoZero$variable), 1, function(x){
