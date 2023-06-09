@@ -51,22 +51,27 @@ labelStraincolor = gsub ("Resistent", "green", labelStrain)
 labelStraincolor = gsub ("Intermediair", "red", labelStraincolor)
 labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
 
+# Define plot formats
+BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
+
 
 
 
 #### Define the functions ####
 
 ### Pre-process data by subsetting the origin data, choosing whether or not to take the log2, and converting the data to a long format.
-Function_preprocessData = function(data, index, takeLog2) {
+Function_preprocessData = function(data, index, NoZero, takeLog2) {
   
 # Subset the data based on the provided index
 data_sub = data[, index]
 
+# Remove proteins with even one zero
 if (NoZero) {
-  data_sub = data_sub %>%
-    filter(.data[[index]] != 0)
+  row_indices = rowSums(data_sub == 0) == 0
+  data_sub = data_sub[row_indices, ]
 }
 
+# Take the log2
 if (takeLog2) {
   data_sub = log2(data_sub)
 }
@@ -100,24 +105,25 @@ Function_drawHistogram = function(data, title) {
     labs(x = "log2(Intensity)", y = "Frequency", title = title)
 }
 
-# ---------------------Below
-
-### ????????? Drawing a box plot, involving the adding of a column defining the color based on the variable, defining the format of the box plot, and the drawing of the plot itself.
-
 ### Adding a column called 'color' to a dataframe and filling it with the strain types
 Function_add_colorColumn = function(data) {
   data = cbind(data, apply(as.data.frame(data$variable), 1, function(x){
     unlist(strsplit(as.character(x), "_"))[2]
   }))
   colnames(data)[3] = "color"
+  return(data)
 }
 
-Data_Box_BNorm_NoZero = cbind(Data_Box_BNorm_NoZero, apply(as.data.frame(Data_Box_BNorm_NoZero$variable), 1, function(x){
-  unlist(strsplit(as.character(x), "_"))[2] # From the 'variable' column (which contains sample names) the 2nd word of the variable is taken and put in the new column
-}))
-colnames(Data_Box_BNorm_NoZero)[3] = "color" # Rename the 3rd column to "color"
-
-# ----------------------- Above
+### Drawing a box plot, involving the adding of a column defining the color based on the variable, defining the format of the box plot, and the drawing of the plot itself.
+Function_drawBoxplot = function(data, title) {
+  plot = ggplot(data, aes(x = variable, y = value)) +
+    labs(title = title, y = "log2(intensity)", x = "samples") +
+    geom_violin(aes(col = color)) +
+    geom_boxplot(outlier.color = "black", col = labelStraincolor, width = 0.21) +
+    BoxplotFormat1
+  
+  return(plot)
+}
 
 ### Printing and saving the boxplot
 Function_boxPrintSave = function(plot, filename) {
@@ -158,7 +164,7 @@ Function_savePlot = function(plot, filename,plotType) {
 
 #### Histogram before mean imputation and normalization ####
 ## Data preparation
-Data_Hist_BNorm = Function_preprocessData(ProtTab_Full, IdxIntensCol, takeLog2 = TRUE)
+Data_Hist_BNorm = Function_preprocessData(ProtTab_Full, IdxIntensCol, NoZero = FALSE, takeLog2 = TRUE)
 
 ## Draw the histogram
 Plot_Hist_intensityBNorm = Function_drawHistogram(Data_Hist_BNorm$value, "log2(Intensity) distribution before normalization and imputation")
@@ -170,29 +176,13 @@ Function_savePlot(Plot_Hist_intensityBNorm, filename = "Intensity_Distribution_B
 
 
 #### Boxplot before normalization, no imputation, remove those proteins where there's even one value that is 0 ####
-## Data preparation
-Data_Box_BNorm_NoZero = Function_preprocessData(ProtTab_Full, IdxIntensCol, takeLog2 = FALSE)
+## Data preparation, subset data, remove those proteins where values are missing, take log2, make long format
+Data_Box_BNorm_NoZero = Function_preprocessData(ProtTab_Full, IdxIntensCol, NoZero = TRUE, takeLog2 = TRUE)
 
-# Remove the proteins with even one value that is 0, then take the log2 of the remaining values
-Data_Box_BNorm_NoZero = Function_removeZeros(Data_Box_BNorm_NoZero, takeLog2 = TRUE)
-
-# --------------
-
-# ????????????? Add a column containing information based on which the point color is defined
-Data_Box_BNorm_NoZero = cbind(Data_Box_BNorm_NoZero, apply(as.data.frame(Data_Box_BNorm_NoZero$variable), 1, function(x){
-  unlist(strsplit(as.character(x), "_"))[2] # From the 'variable' column (which contains sample names) the 2nd word of the variable is taken and put in the new column
-}))
-colnames(Data_Box_BNorm_NoZero)[3] = "color" # Rename the 3rd column to "color"
-
-# ------------
+# Add a column containing information based on which the point color is defined
+Data_Box_BNorm_NoZero = Function_add_colorColumn(Data_Box_BNorm_NoZero)
 
 # Make the boxplot of the data before normalization
-BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
-Plot_Box_BNorm_NoZero = ggplot(Data_Box_BNorm_NoZero, aes(x = variable, y = value)) + 
-  labs(title = "log2 intensity distribution before normalization", y = "log2(intensity)", x = "samples") +
-  geom_violin(aes(col = color)) + 
-  geom_boxplot(outlier.color = "black", col = labelStraincolor, width=0.21) + BoxplotFormat1
-
 Plot_Box_BNorm_NoZero = Function_drawBoxplot(Data_Box_BNorm_NoZero, title = "log2 intensity distribution before normalization")
 
 ## Print the plot and save it as a PNG
