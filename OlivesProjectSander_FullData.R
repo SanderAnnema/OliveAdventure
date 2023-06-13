@@ -189,7 +189,7 @@ Function_duplicateAverageing = function(data, accession_origin_column) {
   return(data_mean)
 }
 
-### Differential expression analysis with a 2-way ANOVA between controls and treated samples
+#### Differential expression analysis with a 2-way ANOVA between controls and treated samples
 ## Note: Keep in mind to make sure that the format of the 'data' data frame is correct. It should contain both the intensities and the accession numbers.
 Function_performANOVA = function(data, p_value) {  
     # Convert the data frame to a long format
@@ -200,7 +200,7 @@ Function_performANOVA = function(data, p_value) {
     # Set the data types
     Data_long$variable_type = as.factor(Data_long$variable_type)
     Data_long$sensitivity_type = as.factor(Data_long$sensitivity_type)
-    Data_long$intensity = as.numeric(Data_long$intensity)
+    Data_long$intensity = as.numeric(Data_long$value)
     Data_long$replicate = as.factor(Data_long$replicate)
     
     ## Perform ANOVA for each protein and create the list of tables
@@ -506,98 +506,14 @@ Function_savePlot(Plot_Box_AMean_ImpNoZero, "Averaged_ImpNoZero_Full.png", plotT
 #### NoZero: Differential expression analysis with a 2-way ANOVA between controls and treated samples ####
 ## Data preparation
 # Create a new column for the accession numbers, needed for the analysis. Then move the new column to the beginning.
-Data_AMean_ImpNoZero$Accession = rownames(Data_AMean_ImpNoZero)
-Data_AMean_ImpNoZero = Data_AMean_ImpNoZero[, c("Accession", names(Data_AMean_ImpNoZero)[-ncol(Data_ImpNoZero)])]
+Data_ANOVA_ImpNoZero = Data_AMean_ImpNoZero
+Data_ANOVA_ImpNoZero$Accession = rownames(Data_ANOVA_ImpNoZero)
+rownames(Data_ANOVA_ImpNoZero) = NULL
+Data_ANOVA_ImpNoZero = Data_ANOVA_ImpNoZero[, c("Accession", names(Data_ANOVA_ImpNoZero)[-ncol(Data_ANOVA_ImpNoZero)])]
+
 
 ## Perform the 2-way ANOVA with p-value adjustment
-list_Tab_ANOVA_NoZero = Function_performANOVA(Data_AMean_ImpNoZero, p_value = 0.01)
-
-# Convert the data frame to a long one
-Data_long = gather(ProtTab_Nonred_complete, key="variable", value="intensity", -accession) # Uses the 'gather()' function to make turn the data frame into a long format.
-Data_long = separate(Data_long, variable, c("variable_type", "sensitivity_type", "replicate")) # Separate the column names from each other.
-
-# Sets the data types
-Data_long$variable_type = as.factor(Data_long$variable_type)
-Data_long$sensitivity_type = as.factor(Data_long$sensitivity_type)
-Data_long$intensity = as.numeric(Data_long$intensity)
-Data_long$replicate = as.factor(Data_long$replicate)
-
-## Perform ANOVA for each protein and create the list of tables
-list_Tab_ANOVA = Data_long %>%
-  group_by(accession) %>%
-  summarize(
-    mean = mean(intensity),
-    sd = sd(intensity),
-    anova_result = list(aov(intensity ~ variable_type * sensitivity_type))
-  ) %>%
-  ungroup()
-
-# Extract information and create tables for each protein
-list_of_tables = lapply(list_Tab_ANOVA$anova_result, function(anova) {
-  anova_summary = summary(anova)
-  p_values = anova_summary[[1]]$`Pr(>F)`
-  df = data.frame(
-    Variables = row.names(anova_summary[[1]]),
-    p_value = p_values,
-    stringsAsFactors = FALSE
-  )
-  return(df)
-})
-
-# Assign the table names as the accession numbers
-names(list_of_tables) = list_Tab_ANOVA$accession
-
-## Reformat the data in preparation for the heatmap
-# Extract the table names into a vector
-vector_tableNames = names(list_of_tables)
-
-# Extract the p-values for variable_type
-vector_variableP = c()
-
-for (i in 1:length(list_of_tables)) {
-  table = list_of_tables[[i]]
-  value = table[1, 2]
-  vector_variableP = c(vector_variableP, value)
-}
-
-# Extract the p-values for sensitivity_type
-vector_sensitivityP = c()
-
-for (i in 1:length(list_of_tables)) {
-  table = list_of_tables[[i]]
-  value = table[2, 2]
-  vector_sensitivityP = c(vector_sensitivityP, value)
-}
-
-# Extract the p-values for the interaction (variable_type:sensitivity_type)
-vector_interactionP = c()
-
-for (i in 1:length(list_of_tables)) {
-  table = list_of_tables[[i]]
-  value = table[3, 2]
-  vector_interactionP = c(vector_interactionP, value)
-}
-
-# Reassemble the 4 columns into one table
-Data_ANOVA = data.frame(Accession = vector_tableNames, Pvalue_variableType = vector_variableP, Pvalue_sensitivityType = vector_sensitivityP, Pvalue_interaction = vector_interactionP)
-
-## P-value adjustment with the Benjamini & Hochberg method
-# Since vectors containing the p-values are already available, the method can be immediately executed
-Adj_Pvalue_variableType = p.adjust(vector_variableP, method = "BH")
-Adj_Pvalue_sensitivityType = p.adjust(vector_sensitivityP, method = "BH")
-Adj_Pvalue_interaction = p.adjust(vector_interactionP, method = "BH")
-
-# Add the adjusted p-values to the heatmap data table
-Data_ANOVA$Adj_Pvalue_variableType = Adj_Pvalue_variableType
-Data_ANOVA$Adj_Pvalue_sensitivityType = Adj_Pvalue_sensitivityType
-Data_ANOVA$Adj_Pvalue_interaction = Adj_Pvalue_interaction
-
-## Data filtering
-# Select only those proteins where the p-values of both the adjusted variable_type and sensitivity_type are below 0.01
-Selection_rows = Data_ANOVA$Adj_Pvalue_variableType < 0.01 & Data_ANOVA$Adj_Pvalue_sensitivityType < 0.01 & Data_ANOVA$Adj_Pvalue_interaction < 0.01
-
-# Create the filtered data frame, which will contain the significant proteins
-Data_ANOVA_signProteins = Data_ANOVA[Selection_rows, ]
+Output_ANOVA_NoZero = Function_performANOVA(Data_ANOVA_ImpNoZero, p_value = 0.01)
 
 
 
