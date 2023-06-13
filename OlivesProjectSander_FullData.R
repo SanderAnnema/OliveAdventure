@@ -190,10 +190,18 @@ Function_duplicateAverageing = function(data, accession_origin_column) {
 }
 
 #### Differential expression analysis with a 2-way ANOVA between controls and treated samples
-## Note: Keep in mind to make sure that the format of the 'data' data frame is correct. It should contain both the intensities and the accession numbers.
+## Note: Keep in mind to make sure that the format of the 'data' data frame is correct. It should have the accession numbers as the row names, and only the raw intensities in the data frame itself.
 Function_performANOVA = function(data, p_value) {  
-    # Convert the data frame to a long format
+  #   Create a new column for the accession numbers needed for the analysis
+  data$Accession = rownames(data)
+  
+  # Move the column to the beginning, removing the copy and the row names.
+  rownames(data) = NULL
+  data = data[, c("Accession", names(data)[-ncol(data)])]
+  
+  # Convert the data frame to a long format
     Data_long = Function_makeLong(data, exclude_columns = "Accession")
+    
     # Separate the variable column into 3
     Data_long = separate(Data_long, variable, c("variable_type", "sensitivity_type", "replicate"))
     
@@ -275,8 +283,77 @@ Function_performANOVA = function(data, p_value) {
     )
     
     return(output)
-  }
+}
   
+### Heatmap generation
+Function_drawHeatmap = function(data, ANOVA_output) {
+  ## Data preparation
+  # Create a new column for the accession numbers needed for the analysis
+  data$Accession = rownames(data)
+  
+  # Move the column to the beginning, removing the copy and the row names.
+  rownames(data) = NULL
+  data = data[, c("Accession", names(data)[-ncol(data)])]
+  
+  # Convert the data frame to a long format
+  Data_long = Function_makeLong(data, exclude_columns = "Accession")
+  
+  # Separate the variable column into 3
+  Data_long = separate(Data_long, variable, c("variable_type", "sensitivity_type", "replicate"))
+  
+  # Set the data types
+  Data_long$variable_type = as.factor(Data_long$variable_type)
+  Data_long$sensitivity_type = as.factor(Data_long$sensitivity_type)
+  Data_long$intensity = as.numeric(Data_long$value)
+  Data_long$replicate = as.factor(Data_long$replicate)
+  
+  ## Heatmap data prep
+  # Create a vector containing the accession numbers of the significant proteins
+  Sign_Prot = ANOVA_output$Data_ANOVA_signProteins$Accession
+  
+  # Subset the intensity data frame to retain only significant proteins
+  sub_data = subset(Data_long, Accession %in% Sign_Prot)
+  
+  # Convert the intensities to log2 to decrease variance between samples.
+  sub_data = subset(Data_long, Accession %in% Sign_Prot)
+  names(sub_data)[5] = "log2_intensity"
+  
+  # Calculate the overall mean of all the significant protein intensities individually
+  Data_meanSD = aggregate(log2_intensity ~ Accession, data = sub_data, FUN = mean)
+  colnames(Data_meanSD)[2] = "overall_mean"
+  
+  # Calculate the standard deviation for each mean and add it to the data frame
+  data_sd = aggregate(log2_intensity ~ Accession, data = sub_data, FUN = sd)
+  colnames(data_sd)[2] = "overall_sd"
+  Data_meanSD = merge(Data_meanSD, data_sd, by = "Accession")
+  
+  # Calculate the z-values
+  Data_heatmap = data.frame(sub_data, z_value = (sub_data$log2_intensity - Data_meanSD$overall_mean[match(sub_data$Accession, Data_meanSD$Accession)]) / Data_meanSD$overall_sd[match(sub_data$Accession, Data_meanSD$Accession)])
+  
+  # Ensure the z_value column is numeric
+  Data_heatmap$z_value = as.numeric(as.character(Data_heatmap$z_value))
+  
+  # Select the relevant columns from Data_heatmap
+  rel_col = Data_heatmap[, c("Accession", "variable_type", "sensitivity_type", "replicate", "z_value")]
+  rel_col$z_value = as.numeric(as.character(rel_col$z_value))
+  
+  # Pivot the data to create a matrix with proteins as rows and combinations as columns
+  Matrix_heatmap = reshape2::dcast(rel_col, Accession ~ variable_type + sensitivity_type + replicate, 
+                                   value.var = "z_value")
+  
+  # Convert the 'accession' column into row names and delete the column
+  rownames(Matrix_heatmap) = Matrix_heatmap$Accession
+  Matrix_heatmap$Accession = NULL
+  
+  ## Draw the heatmap
+  # Specify a randomized number to ensure a reproducible heatmap
+  set.seed(12345)
+  
+  # Create the heatmap based on the matrix
+  Plot_heatmap = pheatmap(Matrix_heatmap, clustering_distance_rows = "euclidean", clustering_distance_cols = "euclidean")
+  
+  return(Plot_heatmap)
+}
 
 
 
@@ -504,73 +581,19 @@ Function_savePlot(Plot_Box_AMean_ImpNoZero, "Averaged_ImpNoZero_Full.png", plotT
 
 
 #### NoZero: Differential expression analysis with a 2-way ANOVA between controls and treated samples ####
-## Data preparation
-# Create a new column for the accession numbers, needed for the analysis. Then move the new column to the beginning.
-Data_ANOVA_ImpNoZero = Data_AMean_ImpNoZero
-Data_ANOVA_ImpNoZero$Accession = rownames(Data_ANOVA_ImpNoZero)
-rownames(Data_ANOVA_ImpNoZero) = NULL
-Data_ANOVA_ImpNoZero = Data_ANOVA_ImpNoZero[, c("Accession", names(Data_ANOVA_ImpNoZero)[-ncol(Data_ANOVA_ImpNoZero)])]
-
-
 ## Perform the 2-way ANOVA with p-value adjustment
-Output_ANOVA_NoZero = Function_performANOVA(Data_ANOVA_ImpNoZero, p_value = 0.01)
+# Note: This section tends to give an error if the entire code is launched in one go. Just execute it again and it should work.
+Output_ANOVA_NoZero = Function_performANOVA(Data_AMean_ImpNoZero, p_value = 0.01)
 
 
 
 
 #### Heatmap generation ####
-## Data preparation
-# Create a vector containing the accession numbers of the significant proteins
-Vector_selected_proteins = Data_ANOVA_signProteins$Accession
+## Perform the heatmap generation
+Plot_Heat_NoZero = Function_drawHeatmap(Data_AMean_ImpNoZero, Output_ANOVA_NoZero)
 
-# Subset 'Data_long to retain only significant proteins
-Data_long_sign = subset(Data_long, accession %in% Vector_selected_proteins)
-
-# Convert the intensities to log2. This decreases variance between samples.
-Data_long_sign$intensity = log2(Data_long_sign$intensity)
-names(Data_long_sign)[5] = "log2_intensity"
-
-# Calculate the overall mean of all the significant protein intensities individually
-Data_meanSD = aggregate(log2_intensity ~ accession, data = Data_long_sign, FUN = mean)
-colnames(Data_meanSD)[2] = "overall_mean"
-
-# Calculate the standard deviation for each mean
-DummyFrame = aggregate(log2_intensity ~ accession, data = Data_long_sign, FUN = sd)
-colnames(DummyFrame)[2] = "overall_sd"
-
-# Add the column to the heatmap data frame
-Data_meanSD = merge(Data_meanSD, DummyFrame, by = "accession")
-rm(DummyFrame)
-
-# Calculate the z-values
-Data_heatmap = data.frame(Data_long_sign, z_value = (Data_long_sign$log2_intensity - Data_meanSD$overall_mean[match(Data_long_sign$accession, Data_meanSD$accession)]) / Data_meanSD$overall_sd[match(Data_long_sign$accession, Data_meanSD$accession)])
-
-# Ensure the z_value column is numeric
-Data_heatmap$z_value = as.numeric(as.character(Data_heatmap$z_value))
-
-# Select the relevant columns from Data_heatmap
-DummyFrame = Data_heatmap[, c("accession", "variable_type", "sensitivity_type", "replicate", "z_value")]
-DummyFrame$z_value = as.numeric(as.character(DummyFrame$z_value))
-
-# Pivot the data to create a matrix with proteins as rows and combinations as columns
-Matrix_heatmap = reshape2::dcast(DummyFrame, accession ~ variable_type + sensitivity_type + replicate, 
-                                 value.var = "z_value")
-
-# Convert the 'accession' column into row names and delete the column
-rownames(Matrix_heatmap) = Matrix_heatmap$accession
-Matrix_heatmap$accession = NULL
-
-# Specify a randomized number to ensure a reproducible heatmap
-set.seed(12345)
-
-# Create the heatmap using the matrix
-Plot_heatmap = pheatmap(Matrix_heatmap, clustering_distance_rows = "euclidean", clustering_distance_cols = "euclidean")
-
-rm(DummyFrame)
-
-## Print the plot and save it as a PNG
-print(Plot_heatmap)
-ggsave("Heatmap_Full.png", plot = Plot_heatmap,
+## Save the heatmap as a PNG
+ggsave("Heatmap_Full_NoZero.png", plot = Plot_Heat_NoZero,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
 
@@ -640,155 +663,19 @@ Function_savePlot(Plot_Box_AMean_ImpRep, "Averaged_ImpRep_Full.png", plotType = 
 
 
 #### Differential expression analysis with a 2-way ANOVA between controls and treated samples ####
-## Filter the data
-# Initially, we will remove all proteins where even one value is 0. This is to make sure the ANOVA works. After this, this section will be edited again.
-ProtTab_Nonred_complete = ProtTab_Nonred[complete.cases(ProtTab_Nonred), ] # With the 'complete.cases()' function, only those rows where there is a complete dataset are selected.
-
-# Convert the data frame to a long one
-Data_long = gather(ProtTab_Nonred_complete, key="variable", value="intensity", -accession) # Uses the 'gather()' function to make turn the data frame into a long format.
-Data_long = separate(Data_long, variable, c("variable_type", "sensitivity_type", "replicate")) # Separate the column names from each other.
-
-# Sets the data types
-Data_long$variable_type = as.factor(Data_long$variable_type)
-Data_long$sensitivity_type = as.factor(Data_long$sensitivity_type)
-Data_long$intensity = as.numeric(Data_long$intensity)
-Data_long$replicate = as.factor(Data_long$replicate)
-
-## Perform ANOVA for each protein and create the list of tables
-list_Tab_ANOVA = Data_long %>%
-  group_by(accession) %>%
-  summarize(
-    mean = mean(intensity),
-    sd = sd(intensity),
-    anova_result = list(aov(intensity ~ variable_type * sensitivity_type))
-  ) %>%
-  ungroup()
-
-# Extract information and create tables for each protein
-list_of_tables = lapply(list_Tab_ANOVA$anova_result, function(anova) {
-  anova_summary = summary(anova)
-  p_values = anova_summary[[1]]$`Pr(>F)`
-  df = data.frame(
-    Variables = row.names(anova_summary[[1]]),
-    p_value = p_values,
-    stringsAsFactors = FALSE
-  )
-  return(df)
-})
-
-# Assign the table names as the accession numbers
-names(list_of_tables) = list_Tab_ANOVA$accession
-
-## Reformat the data in preparation for the heatmap
-# Extract the table names into a vector
-vector_tableNames = names(list_of_tables)
-
-# Extract the p-values for variable_type
-vector_variableP = c()
-
-for (i in 1:length(list_of_tables)) {
-  table = list_of_tables[[i]]
-  value = table[1, 2]
-  vector_variableP = c(vector_variableP, value)
-}
-
-# Extract the p-values for sensitivity_type
-vector_sensitivityP = c()
-
-for (i in 1:length(list_of_tables)) {
-  table = list_of_tables[[i]]
-  value = table[2, 2]
-  vector_sensitivityP = c(vector_sensitivityP, value)
-}
-
-# Extract the p-values for the interaction (variable_type:sensitivity_type)
-vector_interactionP = c()
-
-for (i in 1:length(list_of_tables)) {
-  table = list_of_tables[[i]]
-  value = table[3, 2]
-  vector_interactionP = c(vector_interactionP, value)
-}
-
-# Reassemble the 4 columns into one table
-Data_ANOVA = data.frame(Accession = vector_tableNames, Pvalue_variableType = vector_variableP, Pvalue_sensitivityType = vector_sensitivityP, Pvalue_interaction = vector_interactionP)
-
-## P-value adjustment with the Benjamini & Hochberg method
-# Since vectors containing the p-values are already available, the method can be immediately executed
-Adj_Pvalue_variableType = p.adjust(vector_variableP, method = "BH")
-Adj_Pvalue_sensitivityType = p.adjust(vector_sensitivityP, method = "BH")
-Adj_Pvalue_interaction = p.adjust(vector_interactionP, method = "BH")
-
-# Add the adjusted p-values to the heatmap data table
-Data_ANOVA$Adj_Pvalue_variableType = Adj_Pvalue_variableType
-Data_ANOVA$Adj_Pvalue_sensitivityType = Adj_Pvalue_sensitivityType
-Data_ANOVA$Adj_Pvalue_interaction = Adj_Pvalue_interaction
-
-## Data filtering
-# Select only those proteins where the p-values of both the adjusted variable_type and sensitivity_type are below 0.01
-Selection_rows = Data_ANOVA$Adj_Pvalue_variableType < 0.01 & Data_ANOVA$Adj_Pvalue_sensitivityType < 0.01 & Data_ANOVA$Adj_Pvalue_interaction < 0.01
-
-# Create the filtered data frame, which will contain the significant proteins
-Data_ANOVA_signProteins = Data_ANOVA[Selection_rows, ]
+# Note: This section tends to give an error if the entire code is launched in one go. Just execute it again and it should work.
+Output_ANOVA_Rep = Function_performANOVA(Data_AMean_ImpRep, p_value = 0.01)
 
 
 
 
 #### Heatmap generation ####
-## Data preparation
-# Create a vector containing the accession numbers of the significant proteins
-Vector_selected_proteins = Data_ANOVA_signProteins$Accession
+## Perform the heatmap generation
+Plot_Heat_Rep = Function_drawHeatmap(Data_AMean_ImpRep, Output_ANOVA_Rep)
 
-# Subset 'Data_long to retain only significant proteins
-Data_long_sign = subset(Data_long, accession %in% Vector_selected_proteins)
-
-# Convert the intensities to log2. This decreases variance between samples.
-Data_long_sign$intensity = log2(Data_long_sign$intensity)
-names(Data_long_sign)[5] = "log2_intensity"
-
-# Calculate the overall mean of all the significant protein intensities individually
-Data_meanSD = aggregate(log2_intensity ~ accession, data = Data_long_sign, FUN = mean)
-colnames(Data_meanSD)[2] = "overall_mean"
-
-# Calculate the standard deviation for each mean
-DummyFrame = aggregate(log2_intensity ~ accession, data = Data_long_sign, FUN = sd)
-colnames(DummyFrame)[2] = "overall_sd"
-
-# Add the column to the heatmap data frame
-Data_meanSD = merge(Data_meanSD, DummyFrame, by = "accession")
-rm(DummyFrame)
-
-# Calculate the z-values
-Data_heatmap = data.frame(Data_long_sign, z_value = (Data_long_sign$log2_intensity - Data_meanSD$overall_mean[match(Data_long_sign$accession, Data_meanSD$accession)]) / Data_meanSD$overall_sd[match(Data_long_sign$accession, Data_meanSD$accession)])
-
-# Ensure the z_value column is numeric
-Data_heatmap$z_value = as.numeric(as.character(Data_heatmap$z_value))
-
-# Select the relevant columns from Data_heatmap
-DummyFrame = Data_heatmap[, c("accession", "variable_type", "sensitivity_type", "replicate", "z_value")]
-DummyFrame$z_value = as.numeric(as.character(DummyFrame$z_value))
-
-# Pivot the data to create a matrix with proteins as rows and combinations as columns
-Matrix_heatmap = reshape2::dcast(DummyFrame, accession ~ variable_type + sensitivity_type + replicate, 
-                                 value.var = "z_value")
-
-# Convert the 'accession' column into row names and delete the column
-rownames(Matrix_heatmap) = Matrix_heatmap$accession
-Matrix_heatmap$accession = NULL
-
-# Specify a randomized number to ensure a reproducible heatmap
-set.seed(12345)
-
-# Create the heatmap using the matrix
-Plot_heatmap = pheatmap(Matrix_heatmap, clustering_distance_rows = "euclidean", clustering_distance_cols = "euclidean")
-
-rm(DummyFrame)
-
-## Print the plot and save it as a PNG
-print(Plot_heatmap)
-ggsave("Heatmap_Full.png", plot = Plot_heatmap,
+## Save the heatmap as a PNG
+ggsave("Heatmap_Full_Rep.png", plot = Plot_Heat_Rep,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
-
 
 
 
