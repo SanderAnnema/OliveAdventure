@@ -18,6 +18,8 @@ library(dplyr)
 library(tidyr)
 library(pheatmap)
 library(data.table)
+library(scales)
+library(tidyverse)
 
 # Setting the working directory
 setwd("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New")
@@ -783,10 +785,27 @@ rm(DummyFrame5)
 # Instead of removing those proteins with even one value that is 0, here the 0 values are replaced with the lowest non-0 value after normalization
 
 #### Imputation method 2: Replace 0 values with lowest non-0 value ####
-Value_Lowest = min(Data_Imput[Data_Imput > 0], na.rm = TRUE)
+## Generate a smooth histogram
+# Generate a long variant of the median imputed data
+DummyFrame = Function_makeLong(Data_Imput)
+
+# Generate the smooth histogram for visual inspection
+Plot_SmoothHist_ImpRep = ggplot(DummyFrame, aes(x = value, fill = "Density")) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(values = "blue") +
+  xlab("values") +
+  ylab("Density")
+print(Plot_SmoothHist_ImpRep)
+rm(DummyFrame)
+
+## Extract the lowest value within the smooth plot
+Plot_Smoothed_Density = ggplot_build(ggplot(DummyFrame, aes(x = value)))$data[[1]]
+Value_Smooth_min = min(Plot_Smoothed_Density$y)
+
+## Replace all zeros in the mean imputed dataset with the found lowest value
 Data_ImpRep = Data_Imput
-Data_ImpRep[Data_ImpRep == 0] = Value_Lowest
-rm(Value_Lowest)
+Data_ImpRep[Data_ImpRep == 0] = Value_Smooth_min
+rm(Value_Smooth_min)
 
 
 
