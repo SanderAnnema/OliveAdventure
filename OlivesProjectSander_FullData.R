@@ -355,6 +355,77 @@ Function_drawHeatmap = function(data, ANOVA_output) {
   return(Plot_heatmap)
 }
 
+### Q-Q plot calculation for intensities
+Function_calcQQ_int = function(data, title) {
+  # Calculate the log2 of the intensities
+  data = Function_takeLog2(data)
+  
+  # Lengthen the data frame
+  data_long = Function_makeLong(data)
+  
+  # Subset the relevant data from the data frame
+  sub_data = data_long[, c("variable", "value")]
+  
+  # Calculate the Q-Q plot data
+  output = qqplot(sub_data$value, ppoints(nrow(sub_data)), main = title)
+  
+  return(output)
+}
+
+### Q-Q plot calculation for p-values
+Function_calcQQ_P = function(data) {
+  # Subset the data
+  sub_data = data[, c("Accession", "Adj_Pvalue_variableType", "Adj_Pvalue_sensitivityType", "Adj_Pvalue_interaction")]
+  
+  ## Generate the sub-plots
+  # Variable type
+  QQ_variable = qqplot(sub_data$Adj_Pvalue_variableType, ppoints(nrow(sub_data)), main = "Q-Q Plot: Variable Type")
+  
+  # Sensitivity type
+  QQ_sensitivity = qqplot(sub_data$Adj_Pvalue_sensitivityType, ppoints(nrow(sub_data)), main = "Q-Q Plot: Sensitivity Type")
+  
+  # Interaction
+  QQ_interaction = qqplot(sub_data$Adj_Pvalue_interaction, ppoints(nrow(sub_data)), main = "Q-Q Plot: Interaction")
+  
+  # Combined factors
+  sub_data_full = c(sub_data$Adj_Pvalue_variableType, sub_data$Adj_Pvalue_sensitivityType, sub_data$Adj_Pvalue_interaction)
+  QQ_combined = qqplot(sub_data_full, ppoints(length(sub_data_full)), main = "Q-Q Plot: All factors")
+  
+  # Return the 4 plots as a list
+  list(QQ_variable = QQ_variable, QQ_sensitivity = QQ_sensitivity, QQ_interaction = QQ_interaction, QQ_combined = QQ_combined)
+}
+
+### Q-Q plot drawing
+Function_drawQQ = function (QQPlot_data, plot_type) {
+  if (plot_type == "intensity") {
+    # Convert the plot to a data frame
+    QQ_data = data.frame(x = QQPlot_data$x, y = QQPlot_data$y)
+    
+    # Plot this data frame with ggplot2
+    QQ_plot = ggplot(QQ_data, aes(x, y)) +
+      geom_point() +
+      xlab("Observed Quantiles") +
+      ylab("Theoretical Quantiles")
+    
+    return(QQ_plot)
+    
+  }
+  else if (plot_type == "p_values") {
+    # Convert the plot to a data frame
+    QQ_data = data.frame(x = QQPlot_data$x, y = QQPlot_data$y)
+    
+    # Plot this data frame with ggplot2
+    QQ_plot = ggplot(QQ_data, aes(x, y)) +
+      geom_point() +
+      xlab("Observed Quantiles") +
+      ylab("Theoretical Quantiles") +
+      xlim(0, 1) +
+      ylim(0, 1)
+    
+    return(QQ_plot)
+  }
+}
+
 
 
 
@@ -427,6 +498,20 @@ Plot_Box_ANorm = Function_drawBoxplot(Data_Box_ANorm, title = "log2 intensity di
 
 # Print and save the boxplot
 Function_savePlot(Plot_Box_ANorm, filename = "normalized_data_Full.png", plotType = "boxplot")
+
+
+
+
+#### Normalized intensity normality analysis with Q-Q plots ####
+## Calculations
+QQData_intensity_preImp = Function_calcQQ_int(Data_ANorm, "Q-Q Plot: Normalized Intensities")
+
+## Drawing the plot
+Plot_QQ_intensity_preImp = Function_drawQQ(QQData_intensity_preImp, "intensity")
+
+## Printing and saving the plot
+print(Plot_QQ_intensity_preImp)
+ggsave("QQPlot_intensity_Full.png", plot = Plot_QQ_intensity_preImp, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
 
 
 
@@ -599,6 +684,102 @@ ggsave("Heatmap_Full_NoZero.png", plot = Plot_Heat_NoZero,
 
 
 
+#### p-value normality analysis with Q-Q plots for the NoZero dataset where all proteins with even one remaining zero after imputation are removed ####
+## To determine how the p-values from the entire dataset are distributed, 4 Q-Q plots are made 
+## One for each factor, one for the interaction, and one for all the p-values.
+# Calculate the basic Q-Q plots
+Output_QQ_NoZero = Function_calcQQ_P(Output_ANOVA_NoZero$Data_ANOVA)
+
+## Draw the plots using ggplot2, then save them
+# Variable type
+Plot_QQ_P_variable_NoZero = Function_drawQQ(Output_QQ_NoZero$QQ_variable, plot_type = "p_values")
+print(Plot_QQ_P_variable_NoZero)
+ggsave("QQPlot_variable_NoZero.png", plot = Plot_QQ_P_variable_NoZero, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
+
+# Sensitivity type
+Plot_QQ_P_sensitivity_NoZero = Function_drawQQ(Output_QQ_NoZero$QQ_sensitivity, plot_type = "p_values")
+print(Plot_QQ_P_sensitivity_NoZero)
+ggsave("QQPlot_sensitivity_NoZero.png", plot = Plot_QQ_P_sensitivity_NoZero, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
+
+# Interaction
+Plot_QQ_P_interaction_NoZero = Function_drawQQ(Output_QQ_NoZero$QQ_interaction, plot_type = "p_values")
+print(Plot_QQ_P_interaction_NoZero)
+ggsave("QQPlot_interaction_NoZero.png", plot = Plot_QQ_P_interaction_NoZero, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
+
+# Combined factors
+Plot_QQ_P_combined_NoZero = Function_drawQQ(Output_QQ_NoZero$QQ_combined, plot_type = "p_values")
+print(Plot_QQ_P_combined_NoZero)
+ggsave("QQPlot_combined_NoZero.png", plot = Plot_QQ_P_combined_NoZero, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
+
+
+
+
+#### Histogram of the p-value distribution of all proteins of the NoZero dataset ####
+## Data preparation
+# Subset the relevant data
+DummyFrame1 = Output_ANOVA_NoZero$Data_ANOVA[, c("Adj_Pvalue_variableType", "Adj_Pvalue_sensitivityType", "Adj_Pvalue_interaction")]
+DummyFrame2 = setNames(data.frame(DummyFrame1$Adj_Pvalue_variableType), "P_values")
+DummyFrame3 = setNames(data.frame(DummyFrame1$Adj_Pvalue_sensitivityType), "P_values")
+DummyFrame4 = setNames(data.frame(DummyFrame1$Adj_Pvalue_interaction), "P_values")
+DummyFrame5 = data.frame(P_values = (unlist(DummyFrame1)))
+
+# Ensure all columns are numeric
+DummyFrame1$Adj_Pvalue_variableType = as.numeric(DummyFrame1$Adj_Pvalue_variableType)
+DummyFrame1$Adj_Pvalue_sensitivityType = as.numeric(DummyFrame1$Adj_Pvalue_sensitivityType)
+DummyFrame1$Adj_Pvalue_interaction = as.numeric(DummyFrame1$Adj_Pvalue_interaction)
+DummyFrame2$P_values = as.numeric(DummyFrame2$P_values)
+DummyFrame3$P_values = as.numeric(DummyFrame3$P_values)
+DummyFrame4$P_values = as.numeric(DummyFrame4$P_values)
+DummyFrame5$P_values = as.numeric(DummyFrame5$P_values)
+
+## Create the histograms
+# Variable type
+PlotHist_variable_NoZero = hist(DummyFrame2$P_values, breaks = 10, col = "skyblue",
+                                xlab = "P-values", ylab = "Frequency",
+                                main = "P-value distribution of the variable factor of all proteins",
+                                xlim = c(0, 1))
+
+# Sensitivity type
+PlotHist_sensitivity_NoZero = hist(DummyFrame3$P_values, breaks = 10, col = "skyblue",
+                                   xlab = "P-values", ylab = "Frequency",
+                                   main = "P-value distribution of the sensitivity factor of all proteins",
+                                   xlim = c(0, 1))
+
+# Interaction
+PlotHist_interaction_NoZero = hist(DummyFrame4$P_values, breaks = 10, col = "skyblue",
+                                   xlab = "P-values", ylab = "Frequency",
+                                   main = "P-value distribution of the interaction between factor of all proteins",
+                                   xlim = c(0, 1))
+
+# Combined p-values
+PlotHist_combined_NoZero = hist(DummyFrame5$P_values, breaks = 10, col = "skyblue",
+                                xlab = "P-values", ylab = "Frequency",
+                                main = "Total p-value distribution of the all proteins",
+                                xlim = c(0, 1))
+
+## Save the plots
+dev.copy(png, "PValue_Distribution_variableType_NoZero.png", width = 8, height = 6, units = "in", res = 300)
+dev.off()
+
+dev.copy(png, "PValue_Distribution_sensitivityType_NoZero.png", width = 8, height = 6, units = "in", res = 300)
+dev.off()
+
+dev.copy(png, "PValue_Distribution_interaction_NoZero.png", width = 8, height = 6, units = "in", res = 300)
+dev.off()
+
+dev.copy(png, "PValue_Distribution_combined_NoZero.png", width = 8, height = 6, units = "in", res = 300)
+dev.off()
+
+# Remove the dummy frames
+rm(DummyFrame1)
+rm(DummyFrame2)
+rm(DummyFrame3)
+rm(DummyFrame4)
+rm(DummyFrame5)
+
+
+
+
 # Instead of removing those proteins with even one value that is 0, here the 0 values are replaced with the lowest non-0 value after normalization
 
 #### Imputation method 2: Replace 0 values with lowest non-0 value ####
@@ -679,121 +860,41 @@ ggsave("Heatmap_Full_Rep.png", plot = Plot_Heat_Rep,
 
 
 
-#### Normalized intensity normality analysis with Q-Q plots ####
-## Prepare the data
-# Create a subset of the data frame containing only the relevant columns
-DummyFrame1 = Data_ANormNoZero[, c("variable", "value")]
 
-## Generate the Q-Q plot for normalized intensities
-QQData_intensity = qqplot(DummyFrame1$value, ppoints(nrow(DummyFrame1)), main = "Q-Q Plot: Normalized Intensities")
+#### p-value normality analysis with Q-Q plots for the replacement dataset where all proteins with even one remaining zero after imputation are removed ####
+## To determine how the p-values from the entire dataset are distributed, 4 Q-Q plots are made 
+## One for each factor, one for the interaction, and one for all the p-values.
+# Calculate the basic Q-Q plots
+Output_QQ_Rep = Function_calcQQ_P(Output_ANOVA_Rep$Data_ANOVA)
 
-## Draw the Q-Q plots by converting the Q-Q plot into a data frame, and then using ggplot2 to plot it properly
-DummyFrame2 = data.frame(x = QQData_intensity$x, y = QQData_intensity$y)
-PlotQQ_intensity = ggplot(DummyFrame2, aes(x, y)) +
-  geom_point() +
-  xlab("Observed Quantiles") +
-  ylab("Theoretical Quantiles")
-
-## Print and save the plot
-print(PlotQQ_intensity)
-ggsave("QQPlot_intensity_Full.png", plot = PlotQQ_intensity, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
-
-## Remove the dummy frame
-rm(DummyFrame1)
-rm(DummyFrame2)
-
-
-#### p-value normality analysis with Q-Q plots ####
-# To determine how the p-values from the entire dataset are distributed, 4 Q-Q plots are made 
-# One for each factor, one for the interaction, and one for all the p-values.
-
-## Prepare the data
-# Create a subset of the data frame containing only the relevant columns
-DummyFrame1 = Data_ANOVA[, c("Accession", "Adj_Pvalue_variableType", "Adj_Pvalue_sensitivityType", "Adj_Pvalue_interaction")]
-
-## Generate the Q-Q plots
+## Draw the plots using ggplot2, then save them
 # Variable type
-QQData_variable = qqplot(DummyFrame1$Adj_Pvalue_variableType, ppoints(nrow(DummyFrame1)), main = "Q-Q Plot: Variable Type")
+Plot_QQ_P_variable_Rep = Function_drawQQ(Output_QQ_Rep$QQ_variable, plot_type = "p_values")
+print(Plot_QQ_P_variable_Rep)
+ggsave("QQPlot_variable_Rep.png", plot = Plot_QQ_P_variable_Rep, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
 
 # Sensitivity type
-QQData_sensitivity = qqplot(DummyFrame1$Adj_Pvalue_sensitivityType, ppoints(nrow(DummyFrame1)), main = "Q-Q Plot: Sensitivity Type")
+Plot_QQ_P_sensitivity_Rep = Function_drawQQ(Output_QQ_Rep$QQ_sensitivity, plot_type = "p_values")
+print(Plot_QQ_P_sensitivity_Rep)
+ggsave("QQPlot_sensitivity_Rep.png", plot = Plot_QQ_P_sensitivity_Rep, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
 
 # Interaction
-QQData_interaction = qqplot(DummyFrame1$Adj_Pvalue_interaction, ppoints(nrow(DummyFrame1)), main = "Q-Q Plot: Interaction")
+Plot_QQ_P_interaction_Rep = Function_drawQQ(Output_QQ_Rep$QQ_interaction, plot_type = "p_values")
+print(Plot_QQ_P_interaction_Rep)
+ggsave("QQPlot_interaction_Rep.png", plot = Plot_QQ_P_interaction_Rep, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
 
 # Combined factors
-DummyFrame2 = c(DummyFrame1$Adj_Pvalue_variableType, DummyFrame1$Adj_Pvalue_sensitivityType, DummyFrame1$Adj_Pvalue_interaction) # Another subset is made with the combined p-values
-QQData_combined = qqplot(DummyFrame2, ppoints(length(DummyFrame2)), main = "Q-Q Plot: All factors")
-
-# Remove the DummyFrames
-rm(DummyFrame1)
-rm(DummyFrame2)
-
-## Draw the Q-Q plots by converting the Q-Q plots into data frames, and then using ggplot2 to plot them properly
-# Variable type
-DummyFrame = data.frame(x = QQData_variable$x, y = QQData_variable$y)
-PlotQQ_variable = ggplot(DummyFrame, aes(x, y)) +
-  geom_point() +
-  xlab("Observed Quantiles") +
-  ylab("Theoretical Quantiles") +
-  xlim(0, 1) +
-  ylim(0, 1)
-rm(DummyFrame)
-
-# Sensitivity type
-DummyFrame = data.frame(x = QQData_sensitivity$x, y = QQData_sensitivity$y)
-PlotQQ_sensitivity = ggplot(DummyFrame, aes(x, y)) +
-  geom_point() +
-  xlab("Observed Quantiles") +
-  ylab("Theoretical Quantiles") +
-  xlim(0, 1) +
-  ylim(0, 1)
-rm(DummyFrame)
-
-# Interaction
-DummyFrame = data.frame(x = QQData_interaction$x, y = QQData_interaction$y)
-PlotQQ_interaction = ggplot(DummyFrame, aes(x, y)) +
-  geom_point() +
-  xlab("Observed Quantiles") +
-  ylab("Theoretical Quantiles") +
-  xlim(0, 1) +
-  ylim(0, 1)
-rm(DummyFrame)
-
-# Combined factors
-DummyFrame = data.frame(x = QQData_combined$x, y = QQData_combined$y)
-PlotQQ_combined = ggplot(DummyFrame, aes(x, y)) +
-  geom_point() +
-  xlab("Observed Quantiles") +
-  ylab("Theoretical Quantiles") +
-  xlim(0, 1) +
-  ylim(0, 1)
-rm(DummyFrame)
-
-## Print and save the plots
-# Variable type
-print(PlotQQ_variable)
-ggsave("QQPlot_variable.png", plot = PlotQQ_variable, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
-
-# Sensitivity type
-print(PlotQQ_sensitivity)
-ggsave("QQPlot_sensitivity.png", plot = PlotQQ_sensitivity, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
-
-# Interaction
-print(PlotQQ_interaction)
-ggsave("QQPlot_interaction.png", plot = PlotQQ_interaction, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
-
-# Combined factors
-print(PlotQQ_combined)
-ggsave("QQPlot_combined.png", plot = PlotQQ_combined, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
+Plot_QQ_P_combined_Rep = Function_drawQQ(Output_QQ_Rep$QQ_combined, plot_type = "p_values")
+print(Plot_QQ_P_combined_Rep)
+ggsave("QQPlot_combined_Rep.png", plot = Plot_QQ_P_combined_Rep, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
 
 
 
 
-#### Histogram of the p-value distribution of all proteins ####
+#### Histogram of the p-value distribution of all proteins of the replacement dataset ####
 ## Data preparation
 # Subset the relevant data
-DummyFrame1 = Data_ANOVA[, c("Adj_Pvalue_variableType", "Adj_Pvalue_sensitivityType", "Adj_Pvalue_interaction")]
+DummyFrame1 = Output_ANOVA_Rep$Data_ANOVA[, c("Adj_Pvalue_variableType", "Adj_Pvalue_sensitivityType", "Adj_Pvalue_interaction")]
 DummyFrame2 = setNames(data.frame(DummyFrame1$Adj_Pvalue_variableType), "P_values")
 DummyFrame3 = setNames(data.frame(DummyFrame1$Adj_Pvalue_sensitivityType), "P_values")
 DummyFrame4 = setNames(data.frame(DummyFrame1$Adj_Pvalue_interaction), "P_values")
@@ -810,40 +911,40 @@ DummyFrame5$P_values = as.numeric(DummyFrame5$P_values)
 
 ## Create the histograms
 # Variable type
-PlotHist_variable = hist(DummyFrame2$P_values, breaks = 10, col = "skyblue",
+PlotHist_variable_Rep = hist(DummyFrame2$P_values, breaks = 10, col = "skyblue",
                          xlab = "P-values", ylab = "Frequency",
                          main = "P-value distribution of the variable factor of all proteins",
                          xlim = c(0, 1))
 
 # Sensitivity type
-PlotHist_sensitivity = hist(DummyFrame3$P_values, breaks = 10, col = "skyblue",
+PlotHist_sensitivity_Rep = hist(DummyFrame3$P_values, breaks = 10, col = "skyblue",
                             xlab = "P-values", ylab = "Frequency",
                             main = "P-value distribution of the sensitivity factor of all proteins",
                             xlim = c(0, 1))
 
 # Interaction
-PlotHist_interaction = hist(DummyFrame4$P_values, breaks = 10, col = "skyblue",
+PlotHist_interaction_Rep = hist(DummyFrame4$P_values, breaks = 10, col = "skyblue",
                             xlab = "P-values", ylab = "Frequency",
                             main = "P-value distribution of the interaction between factor of all proteins",
                             xlim = c(0, 1))
 
 # Combined p-values
-PlotHist_combined = hist(DummyFrame5$P_values, breaks = 10, col = "skyblue",
+PlotHist_combined_Rep = hist(DummyFrame5$P_values, breaks = 10, col = "skyblue",
                          xlab = "P-values", ylab = "Frequency",
                          main = "Total p-value distribution of the all proteins",
                          xlim = c(0, 1))
 
 ## Save the plots
-dev.copy(png, "PValue_Distribution_variableType.png", width = 8, height = 6, units = "in", res = 300)
+dev.copy(png, "PValue_Distribution_variableType_Rep.png", width = 8, height = 6, units = "in", res = 300)
 dev.off()
 
-dev.copy(png, "PValue_Distribution_sensitivityType.png", width = 8, height = 6, units = "in", res = 300)
+dev.copy(png, "PValue_Distribution_sensitivityType_Rep.png", width = 8, height = 6, units = "in", res = 300)
 dev.off()
 
-dev.copy(png, "PValue_Distribution_interaction.png", width = 8, height = 6, units = "in", res = 300)
+dev.copy(png, "PValue_Distribution_interaction_Rep.png", width = 8, height = 6, units = "in", res = 300)
 dev.off()
 
-dev.copy(png, "PValue_Distribution_combined.png", width = 8, height = 6, units = "in", res = 300)
+dev.copy(png, "PValue_Distribution_combined_Rep.png", width = 8, height = 6, units = "in", res = 300)
 dev.off()
 
 # Remove the dummy frames
