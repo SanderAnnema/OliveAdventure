@@ -81,7 +81,7 @@ Function_makeLong = function(data, exclude_columns = NULL) {
   if (is.null(exclude_columns)) {
     data_long = pivot_longer(data, cols = everything(), names_to = "variable", values_to = "value")
   } else {
-    data_long = pivot_longer(data, cols = -exclude_columns, names_to = "variable", values_to = "value")
+    data_long = pivot_longer(data, cols = -all_of(exclude_columns), names_to = "variable", values_to = "value")
   }
   return(data_long)
 }
@@ -669,7 +669,6 @@ Function_savePlot(Plot_Box_AMean_ImpNoZero, "Averaged_ImpNoZero_Full.png", plotT
 
 #### NoZero: Differential expression analysis with a 2-way ANOVA between controls and treated samples ####
 ## Perform the 2-way ANOVA with p-value adjustment
-# Note: This section tends to give an error if the entire code is launched in one go. Just execute it again and it should work.
 Output_ANOVA_NoZero = Function_performANOVA(Data_AMean_ImpNoZero, p_value = 0.01)
 
 
@@ -789,6 +788,37 @@ rm(DummyFrame5)
 # Generate a long variant of the median imputed data
 DummyFrame = Function_makeLong(Data_Imput)
 
+# ----- test section
+# Generate a test dataframe containing only the values to be plotted
+test_df = data.frame(value = DummyFrame$value)
+test_df = log10(test_df)
+
+# Calculate and print the percentage of zeros in the dataset
+test_percentage_zero = sum(test_df$value == 0) / nrow(test_df) * 100
+cat("Percentage of zeros:", test_percentage_zero, "%\n")
+
+# Generate a smooth histogram of the data
+Plot_SmoothHist_ImpRep = ggplot(test_df, aes(x = value)) +
+  geom_density(fill = "skyblue", color = "black", alpha = 0.5) +
+  labs(x = "Values", y = "Density", title = "Smooth Histogram")
+print(Plot_SmoothHist_ImpRep)
+
+# Extract the y-values of the smooth plot
+smooth_hist_data = ggplot_build(Plot_SmoothHist_ImpRep)$data[[1]]
+y_values = smooth_hist_data$y
+
+# Calculate the percentage of zeros in the plot itself
+test_percentage_zero_plot = sum(y_values == 0) / nrow(y_values) * 100
+cat("Percentage of zeros:", test_percentage_zero_plot, "%\n")
+
+# Generate a regular histogram of the data
+Plot_Hist_test = ggplot(test_df, aes(x = value)) +
+  geom_histogram(fill = "skyblue", color = "black") +
+  labs(x = "Intensity", y = "Frequency", title = "test plot")
+print(Plot_Hist_test)
+
+# ---------
+
 # Generate the smooth histogram for visual inspection
 Plot_SmoothHist_ImpRep = ggplot(DummyFrame, aes(x = value, fill = "Density")) +
   geom_density(alpha = 0.5) +
@@ -818,7 +848,8 @@ Data_Hist_ImpRep = Function_makeLong(Data_Hist_ImpRep)
 ## Draw the histogram
 Plot_Hist_ImpRep = Function_drawHistogram(Data_Hist_ImpRep$value, title = "log2(Intensity) distribution after normalization, mean imputation and zero replacement")
 
-## Save the histogram
+## Print and save the histogram
+print(Plot_Hist_ImpRep)
 Function_savePlot(Plot_Hist_ImpRep, "Intensity_Distribution_ANorm_ImpRep_Full.png", plotType = "histogram")
 
 
