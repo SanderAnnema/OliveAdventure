@@ -796,11 +796,11 @@ Plot_SmoothHist_ImpRep = ggplot(DummyFrame, aes(x = value, fill = "Density")) +
   xlab("values") +
   ylab("Density")
 print(Plot_SmoothHist_ImpRep)
-rm(DummyFrame)
 
 ## Extract the lowest value within the smooth plot
 Plot_Smoothed_Density = ggplot_build(ggplot(DummyFrame, aes(x = value)))$data[[1]]
 Value_Smooth_min = min(Plot_Smoothed_Density$y)
+rm(DummyFrame)
 
 ## Replace all zeros in the mean imputed dataset with the found lowest value
 Data_ImpRep = Data_Imput
