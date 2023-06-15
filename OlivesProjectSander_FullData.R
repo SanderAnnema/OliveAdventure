@@ -787,56 +787,33 @@ rm(DummyFrame5)
 ## Generate a smooth histogram
 # Generate a long variant of the median imputed data
 DummyFrame = Function_makeLong(Data_Imput)
+DummyFrame$value = log10(DummyFrame$value)
+DummyFrame = as.data.frame(DummyFrame)
 
-# ----- test section
-# Generate a test dataframe containing only the values to be plotted
-test_df = data.frame(value = DummyFrame$value)
-test_df = log10(test_df)
-
-# Calculate and print the percentage of zeros in the dataset
-test_percentage_zero = sum(test_df$value == 0) / nrow(test_df) * 100
-cat("Percentage of zeros:", test_percentage_zero, "%\n")
-
-# Generate a smooth histogram of the data
-Plot_SmoothHist_ImpRep = ggplot(test_df, aes(x = value)) +
-  geom_density(fill = "skyblue", color = "black", alpha = 0.5) +
-  labs(x = "Values", y = "Density", title = "Smooth Histogram")
+# Generate and print a smooth histogram of the data
+Plot_SmoothHist_ImpRep = ggplot(DummyFrame, aes(x = value)) +
+  geom_density(fill = "skyblue", color = "black", alpha = 0.5, bw = 0.15) +
+  labs(x = "log10(intensity)", y = "Density", title = "Smooth Histogram of log10 protein intensity")
 print(Plot_SmoothHist_ImpRep)
 
-# Extract the y-values of the smooth plot
-smooth_hist_data = ggplot_build(Plot_SmoothHist_ImpRep)$data[[1]]
-y_values = smooth_hist_data$y
+# Generate a data file of the smooth plot to extract the y-values
+Data_SmoothHistPlot = ggplot_build(Plot_SmoothHist_ImpRep)$data[[1]]
 
-# Calculate the percentage of zeros in the plot itself
-test_percentage_zero_plot = sum(y_values == 0) / nrow(y_values) * 100
-cat("Percentage of zeros:", test_percentage_zero_plot, "%\n")
+# Determine the minimum density point  of the smooth plot
+Value_Smooth_minDens = which.min(Data_SmoothHistPlot$y)
 
-# Generate a regular histogram of the data
-Plot_Hist_test = ggplot(test_df, aes(x = value)) +
-  geom_histogram(fill = "skyblue", color = "black") +
-  labs(x = "Intensity", y = "Frequency", title = "test plot")
-print(Plot_Hist_test)
-
-# ---------
-
-# Generate the smooth histogram for visual inspection
-Plot_SmoothHist_ImpRep = ggplot(DummyFrame, aes(x = value, fill = "Density")) +
-  geom_density(alpha = 0.5) +
-  scale_fill_manual(values = "blue") +
-  xlab("values") +
-  ylab("Density")
-print(Plot_SmoothHist_ImpRep)
-
-## Extract the lowest value within the smooth plot
-Plot_Smoothed_Density = ggplot_build(ggplot(DummyFrame, aes(x = value)))$data[[1]]
-Value_Smooth_min = min(Plot_Smoothed_Density$y)
-rm(DummyFrame)
+# Extract the corresponding x-value (log10(intensity)) and convert it back to intensity
+Value_Smooth_min = Data_SmoothHistPlot$x[Value_Smooth_minDens]
+Value_Smooth_min = 10^(Value_Smooth_min)
 
 ## Replace all zeros in the mean imputed dataset with the found lowest value
 Data_ImpRep = Data_Imput
 Data_ImpRep[Data_ImpRep == 0] = Value_Smooth_min
-rm(Value_Smooth_min)
 
+# Remove excessive files
+rm(DummyFrame)
+rm(Value_Smooth_min)
+rm(Value_Smooth_minDens)
 
 
 
