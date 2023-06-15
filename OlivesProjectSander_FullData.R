@@ -518,23 +518,38 @@ ggsave("QQPlot_intensity_Full.png", plot = Plot_QQ_intensity_preImp, scale = 1, 
 
 
 
-#### Histogram showing the percentages of zeros per protein before averageing and imputation
-# Generate a data frame contain
+#### Histogram showing the percentages of zeros per protein before averageing and imputation ####
+# Calculate the percentage of missing values per protein
 Data_PercentageZero_ANorm = data.frame(Percentage_Zero = rowMeans(Data_ANorm == 0) * 100)
 
-# Draw the histogram
-Plot_Hist_PercentageZero_ANorm = ggplot(Data_PercentageZero_ANorm, aes(x = rownames(Data_PercentageZero_ANorm), y = Percentage_Zero)) +
+# Create a new variable for the bins (0-10%, 10-20%, ..., 90-100%)
+Data_PercentageZero_ANorm$Bin = cut(Data_PercentageZero_ANorm$Percentage_Zero, breaks = c(seq(0, 90, by = 10), 100), right = FALSE, labels = FALSE)
+
+# Count the number of proteins in each bin
+Data_PercentageZeroCounts = table(Data_PercentageZero_ANorm$Bin)
+
+# Convert the table to a data frame
+Data_PercentageZeroCounts = as.data.frame(Data_PercentageZeroCounts)
+names(Data_PercentageZeroCounts) = c("Bin", "Count")
+Data_PercentageZeroCounts$Bin = as.numeric(Data_PercentageZeroCounts$Bin) -1
+
+# Generate the labels for the x-axis
+bin_labels = paste0(Data_PercentageZeroCounts$Bin * 10, "%-", (Data_PercentageZeroCounts$Bin + 1) * 10 - 1, "%")
+
+# Plot the histogram
+Plot_Hist_PercentageZero_ANorm = ggplot(Data_PercentageZeroCounts, aes(x = reorder(bin_labels, -Count), y = Count)) +
   geom_bar(stat = "identity", fill = "skyblue") +
-  xlab("Protein") +
-  ylab("Percentage of Zeros") +
-  ggtitle("Percentage of Zeros per protein") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 2))
+  xlab("Percentage Range") +
+  ylab("Number of Proteins") +
+  ggtitle("Distribution of Missing Values per Protein") +
+  scale_x_discrete(labels = bin_labels) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
 # Print the plot
 print(Plot_Hist_PercentageZero_ANorm)
 
 # Save the histogram
-ggsave("Percentage_ZeroPerProtein_ANorm.png", plot = Plot_Hist_PercentageZero_ANorm, width = 20, height = 6, dpi = 600)
+ggsave("Distribution_MissingValues_PerProtein_ANorm.png", plot = Plot_Hist_PercentageZero_ANorm, width = 10, height = 6, dpi = 300)
 
 
 
@@ -562,6 +577,9 @@ Plot_Box_AMean = Function_drawBoxplot(Data_Box_AMean, title = "log2 intensity di
 Function_savePlot(Plot_Box_AMean, filename = "averaged_data_Full.png", plotType = "boxplot")
 
 
+
+
+#### Removal of proteins with only one data point ####
 
 
 #### Imputation of missing values ####
