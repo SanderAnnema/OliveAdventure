@@ -140,22 +140,43 @@ Function_savePlot = function(plot, filename, plotType) {
   }
 }
 
-### Mean imputation
-Function_meanImput = function(row) {
-  row_mean = mean(row)
-  row[row == 0] = row_mean
-  return(row)
+### Identification of triplicates with too little data
+Function_IdentBarrenProt = function(data) {
+  # Define a sub-function to count non-zero values in a row
+  Function_CountNonZero = function(row) {
+    sum(row != 0)
+  }
+  
+  # Apply the sub-function on each row to count non-zero values
+  Count_non_zero = apply(data, 1, Function_CountNonZero)
+  
+  # Find the row names where the non-zero count is 1 or less
+  Barren_Proteins = rownames(data)[Count_non_zero <= 1]
+  
+  return(Barren_Proteins)
 }
 
-### The data processing of the output of the mean imputation, involving transposing and changing of the table type
-Function_ImputProcessing = function(data) {
+### Mean imputation of a dataset, where each imputation is performed on one triplicate measurement. Those proteins where there's only one value will be removed.
+## Note: This function only acts upon a subset, so you need to select the subsets yourself.
+Function_TripMeanImput = function(data) {
+  # Define a sub-function for mean imputation over rows
+  Function_meanImput = function(row) {
+    row_mean = mean(row)
+    row[row == 0] = row_mean
+    return(row)
+  }
+  
+  # Apply the sub-function on the subset to impute the missing values
+  data = apply(data, 1, Function_meanImput)
+
   # Transpose row- and column names
-  data = t(data)
-  
-  # Revert to data frames
-  data = data.frame(data)
-  
-  return(data)
+    data = t(data)
+    
+    # Revert to data frames
+    data = data.frame(data)
+    
+    return(data)
+
 }
 
 ### Duplicate averageing
@@ -579,22 +600,34 @@ Function_savePlot(Plot_Box_AMean, filename = "averaged_data_Full.png", plotType 
 
 
 
-#### Removal of proteins with only one data point ####
-
-
-#### Imputation of missing values ####
+#### Imputation of missing values #### -----------WORKING ON THIS -----------
 ### Mean imputation of those samples where at least 1 of the triplicates of each sample are >0. This will give a dataset of 6 values from which a mean can be taken, limiting the effects on the overall data.
 
 ## Prepare the data
 Data_Imput = Data_ANorm
 
 # Make 6 subsets for individual triplicates, so they can be imputed later with greater ease
-subset_control_sensitive = subset(Data_Imput, select = grepl("^Control_Sensitive", colnames(Data_Imput)))
-subset_treated_sensitive = subset(Data_Imput, select = grepl("^Treated_Sensitive", colnames(Data_Imput)))
-subset_control_intermediair = subset(Data_Imput, select = grepl("^Control_Intermediair", colnames(Data_Imput)))
-subset_treated_intermediair = subset(Data_Imput, select = grepl("^Treated_Intermediair", colnames(Data_Imput)))
-subset_control_resistent = subset(Data_Imput, select = grepl("^Control_Resistent", colnames(Data_Imput)))
-subset_treated_resistent = subset(Data_Imput, select = grepl("^Treated_Resistent", colnames(Data_Imput)))
+subset_control_sensitive = subset(Data_ANorm, select = grepl("^Control_Sensitive", colnames(Data_ANorm)))
+subset_treated_sensitive = subset(Data_ANorm, select = grepl("^Treated_Sensitive", colnames(Data_ANorm)))
+subset_control_intermediair = subset(Data_ANorm, select = grepl("^Control_Intermediair", colnames(Data_ANorm)))
+subset_treated_intermediair = subset(Data_ANorm, select = grepl("^Treated_Intermediair", colnames(Data_ANorm)))
+subset_control_resistent = subset(Data_ANorm, select = grepl("^Control_Resistent", colnames(Data_ANorm)))
+subset_treated_resistent = subset(Data_ANorm, select = grepl("^Treated_Resistent", colnames(Data_ANorm)))
+
+# Determine which proteins have 1 or less values within a row. This allows the future elimination of proteins with too little data.
+List_ProtBarren = list()
+List_ProtBarren_CSens = Function_IdentBarrenProt(subset_control_sensitive)
+
+# Perform mean imputation over the triplicates
+subset_control_sensitive = Function_TripMeanImput(subset_control_sensitive)
+subset_treated_sensitive = Function_TripMeanImput(subset_treated_sensitive)
+subset_control_intermediair = Function_TripMeanImput(subset_control_intermediair)
+subset_treated_intermediair = Function_TripMeanImput(subset_treated_intermediair)
+subset_control_resistent = Function_TripMeanImput(subset_control_resistent)
+subset_treated_resistent = Function_TripMeanImput(subset_treated_resistent)
+
+
+
 
 # Apply the function to each subset data frame
 subset_control_sensitive = apply(subset_control_sensitive, 1, Function_meanImput)
