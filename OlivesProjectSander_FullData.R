@@ -600,13 +600,10 @@ Function_savePlot(Plot_Box_AMean, filename = "averaged_data_Full.png", plotType 
 
 
 
-#### Imputation of missing values #### -----------WORKING ON THIS -----------
+#### Mean imputation of missing values ####
 ### Mean imputation of those samples where at least 1 of the triplicates of each sample are >0. This will give a dataset of 6 values from which a mean can be taken, limiting the effects on the overall data.
-
-## Prepare the data
-Data_Imput = Data_ANorm
-
-# Make 6 subsets for individual triplicates, so they can be imputed later with greater ease
+## Data preparation: Removing proteins that lack too much data for mean imputation
+# Make 6 subsets for individual triplicates
 subset_control_sensitive = subset(Data_ANorm, select = grepl("^Control_Sensitive", colnames(Data_ANorm)))
 subset_treated_sensitive = subset(Data_ANorm, select = grepl("^Treated_Sensitive", colnames(Data_ANorm)))
 subset_control_intermediair = subset(Data_ANorm, select = grepl("^Control_Intermediair", colnames(Data_ANorm)))
@@ -615,8 +612,39 @@ subset_control_resistent = subset(Data_ANorm, select = grepl("^Control_Resistent
 subset_treated_resistent = subset(Data_ANorm, select = grepl("^Treated_Resistent", colnames(Data_ANorm)))
 
 # Determine which proteins have 1 or less values within a row. This allows the future elimination of proteins with too little data.
-List_ProtBarren = list()
 List_ProtBarren_CSens = Function_IdentBarrenProt(subset_control_sensitive)
+List_ProtBarren_TSens = Function_IdentBarrenProt(subset_treated_sensitive)
+List_ProtBarren_CInt = Function_IdentBarrenProt(subset_control_intermediair)
+List_ProtBarren_TInt = Function_IdentBarrenProt(subset_treated_intermediair)
+List_ProtBarren_CRes = Function_IdentBarrenProt(subset_control_resistent)
+List_ProtBarren_TRes = Function_IdentBarrenProt(subset_treated_resistent)
+
+# Reassemble the lists into one list of all proteins where even one factor has too much missing data, then remove the subset lists
+List_ProtBarren = unique(c(List_ProtBarren_CSens, List_ProtBarren_TSens, List_ProtBarren_CInt, List_ProtBarren_TInt, List_ProtBarren_CRes, List_ProtBarren_TRes))
+rm(List_ProtBarren_CSens)
+rm(List_ProtBarren_TSens)
+rm(List_ProtBarren_CInt)
+rm(List_ProtBarren_TInt)
+rm(List_ProtBarren_CRes)
+rm(List_ProtBarren_TRes)
+
+### TEMPORARY CODE SECTION ###
+## Note: This code allows you to check which proteins were removed with their respective data. To make sure all is okay.
+Test_CheckProtBarren = Data_Imput[rownames(Data_ANorm) %in% List_ProtBarren, ]
+
+### END OF TEMPORARY CODE SECTION ###
+
+# Make a subset of Data_ANorm containing only usable proteins, based on the list of barren proteins made above
+Data_Imput = Data_ANorm[!(rownames(Data_ANorm) %in% List_ProtBarren), ]
+
+## Mean imputation
+# Make 6 subsets for individual triplicates
+subset_control_sensitive = subset(Data_Imput, select = grepl("^Control_Sensitive", colnames(Data_Imput)))
+subset_treated_sensitive = subset(Data_Imput, select = grepl("^Treated_Sensitive", colnames(Data_Imput)))
+subset_control_intermediair = subset(Data_Imput, select = grepl("^Control_Intermediair", colnames(Data_Imput)))
+subset_treated_intermediair = subset(Data_Imput, select = grepl("^Treated_Intermediair", colnames(Data_Imput)))
+subset_control_resistent = subset(Data_Imput, select = grepl("^Control_Resistent", colnames(Data_Imput)))
+subset_treated_resistent = subset(Data_Imput, select = grepl("^Treated_Resistent", colnames(Data_Imput)))
 
 # Perform mean imputation over the triplicates
 subset_control_sensitive = Function_TripMeanImput(subset_control_sensitive)
@@ -626,16 +654,6 @@ subset_treated_intermediair = Function_TripMeanImput(subset_treated_intermediair
 subset_control_resistent = Function_TripMeanImput(subset_control_resistent)
 subset_treated_resistent = Function_TripMeanImput(subset_treated_resistent)
 
-
-
-
-# Apply the function to each subset data frame
-subset_control_sensitive = apply(subset_control_sensitive, 1, Function_meanImput)
-subset_treated_sensitive = apply(subset_treated_sensitive, 1, Function_meanImput)
-subset_control_intermediair = apply(subset_control_intermediair, 1, Function_meanImput)
-subset_treated_intermediair = apply(subset_treated_intermediair, 1, Function_meanImput)
-subset_control_resistent = apply(subset_control_resistent, 1, Function_meanImput)
-subset_treated_resistent = apply(subset_treated_resistent, 1, Function_meanImput)
 
 ## Output data management
 subset_control_sensitive = Function_ImputProcessing(subset_control_sensitive)
