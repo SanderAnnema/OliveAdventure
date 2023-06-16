@@ -654,15 +654,6 @@ subset_treated_intermediair = Function_TripMeanImput(subset_treated_intermediair
 subset_control_resistent = Function_TripMeanImput(subset_control_resistent)
 subset_treated_resistent = Function_TripMeanImput(subset_treated_resistent)
 
-
-## Output data management
-subset_control_sensitive = Function_ImputProcessing(subset_control_sensitive)
-subset_treated_sensitive = Function_ImputProcessing(subset_treated_sensitive)
-subset_control_intermediair = Function_ImputProcessing(subset_control_intermediair)
-subset_treated_intermediair = Function_ImputProcessing(subset_treated_intermediair)
-subset_control_resistent = Function_ImputProcessing(subset_control_resistent)
-subset_treated_resistent = Function_ImputProcessing(subset_treated_resistent)
-
 # Reassemble the 6 separate data frames into one full data set
 Data_Imput = as.data.frame(cbind(subset_control_sensitive, subset_treated_sensitive, subset_control_intermediair, subset_treated_intermediair, subset_control_resistent, subset_treated_resistent))
 
