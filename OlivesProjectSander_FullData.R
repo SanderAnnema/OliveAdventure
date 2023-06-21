@@ -20,6 +20,7 @@ library(pheatmap)
 library(data.table)
 library(scales)
 library(tidyverse)
+library(UniprotR)
 
 # Setting the working directory
 setwd("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New")
@@ -630,7 +631,7 @@ rm(List_ProtBarren_TRes)
 
 ### TEMPORARY CODE SECTION ###
 ## Note: This code allows you to check which proteins were removed with their respective data. To make sure all is okay.
-Test_CheckProtBarren = Data_Imput[rownames(Data_ANorm) %in% List_ProtBarren, ]
+Test_CheckProtBarren = Data_ANorm[rownames(Data_ANorm) %in% List_ProtBarren, ]
 
 ### END OF TEMPORARY CODE SECTION ###
 
@@ -837,6 +838,20 @@ rm(DummyFrame2)
 rm(DummyFrame3)
 rm(DummyFrame4)
 rm(DummyFrame5)
+
+
+
+
+#### Protein ID conversion using UniProt ####
+## Prepare data
+# Make a vector of protein IDs to be converted
+Vector_ProteinIDs_Acc_NoZero = rownames(Data_AMean_ImpNoZero)
+
+# Extract only the relevant section of the accession number. So only the part after the second '|' symbol.
+Vector_ProteinIDs_Acc_NoZero = sub("^[^|]*\\|[^|]*\\|(.*)", "\\1", Vector_ProteinIDs_Acc_NoZero)
+
+## Convert the accession numbers to ensembl gene IDs
+Vector_ProteinIDs_Ens_NoZero = ConvertID(Vector_ProteinIDs_Acc_NoZero, ID_from = "ACC+ID" , ID_to = "ENSEMBL_GENE_ID")
 
 
 
