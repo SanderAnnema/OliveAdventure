@@ -20,7 +20,10 @@ library(pheatmap)
 library(data.table)
 library(scales)
 library(tidyverse)
-library(UniprotR)
+library(UniProt.ws)
+library(MASS)
+library(gProfileR)
+library(gprofiler2)
 
 # Setting the working directory
 setwd("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New")
@@ -851,14 +854,20 @@ Vector_ProteinIDs_Acc_NoZero = rownames(Data_AMean_ImpNoZero)
 Vector_ProteinIDs_Acc_NoZero = sub("^[^|]*\\|[^|]*\\|(.*)", "\\1", Vector_ProteinIDs_Acc_NoZero)
 
 ## Convert the accession numbers to ensembl gene IDs
-Vector_ProteinIDs_Ens_NoZero = ConvertID(Vector_ProteinIDs_Acc_NoZero, ID_from = "ACC+ID" , ID_to = "ENSEMBL_GENE_ID")
+Data_AccMapping = mapUniProt(from = "UniProtKB_AC-ID", to = 'GeneID', query = Vector_ProteinIDs_Acc_NoZero)
+Vector_ProteinIDs_NoZero = Data_AccMapping$To
 
 
 
 
-# Instead of removing those proteins with even one value that is 0, here the 0 values are replaced with the lowest non-0 value after normalization
+#### !!!! Using gProfiler for gene enrichment ####
+
+
+
+
 
 #### Imputation method 2: Replace 0 values with lowest non-0 value ####
+# Instead of removing those proteins with even one value that is 0, here the 0 values are replaced with the lowest non-0 value after normalization
 ## Generate a smooth histogram
 # Generate a long variant of the median imputed data
 DummyFrame = Function_makeLong(Data_Imput)
@@ -871,24 +880,25 @@ Plot_SmoothHist_ImpRep = ggplot(DummyFrame, aes(x = value)) +
   labs(x = "log10(intensity)", y = "Density", title = "Smooth Histogram of log10 protein intensity")
 print(Plot_SmoothHist_ImpRep)
 
-# Generate a data file of the smooth plot to extract the y-values
-Data_SmoothHistPlot = ggplot_build(Plot_SmoothHist_ImpRep)$data[[1]]
+## Fit a Gaussian distribution to the data
+# Generate the fit, mean, and standard deviation of the Gaussian distribution
+Data_Gaussian_Fit = fitdistr(DummyFrame$value, "normal")
+Value_Gaussian_Mu = Data_Gaussian_Fit$estimate[1]
+Value_Gaussian_Sigma = Data_Gaussian_Fit$estimate[2]
 
-# Determine the minimum density point  of the smooth plot
-Value_Smooth_minDens = which.min(Data_SmoothHistPlot$y)
+# Calculate minus 3 sigma value, which is the log10 intensity point that will be used to replace missing values.
+Value_Gaussian_min3Sig = Value_Gaussian_Mu - 3 * Value_Gaussian_Sigma
 
-# Extract the corresponding x-value (log10(intensity)) and convert it back to intensity
-Value_Smooth_min = Data_SmoothHistPlot$x[Value_Smooth_minDens]
-Value_Smooth_min = 10^(Value_Smooth_min)
+# Convert the log10 intensity back to regular intensity
+Value_Rep_min = 10^(Value_Gaussian_min3Sig)
 
 ## Replace all zeros in the mean imputed dataset with the found lowest value
 Data_ImpRep = Data_Imput
-Data_ImpRep[Data_ImpRep == 0] = Value_Smooth_min
+Data_ImpRep[Data_ImpRep == 0] = Value_Rep_min
 
 # Remove excessive files
 rm(DummyFrame)
-rm(Value_Smooth_min)
-rm(Value_Smooth_minDens)
+
 
 
 
