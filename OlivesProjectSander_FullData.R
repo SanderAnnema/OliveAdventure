@@ -1,11 +1,13 @@
 #### Introduction: ####
-# Master project by Sander Annema. 31/05/2023
+# Master project by Sander Annema. Started at 31/05/2023
 # In this project, proteomics data from probiotic bacteria isolated from olives is processed. 
-# These bacteria are either resistant, intermediate, or sensitive to bile.
-# The expression data of both proteins and peptides was collected.
+# These bacteria are either resistant, intermediate, or sensitive to human stomach bile.
+# The expression data of proteins by these 3 strains was collected with- and without exposure to bile.
 # The goal of this project is to determine the effects of protein expression on the exposure of the bacterial strains by bile.
-# This will be achieved by performing a 2-way ANOVA, then generating a heat-map of the proteins.
-# Additionally, in this variant of the file, two imputation methods will be used to fill in missing data from the normalized dataset before the log2 is taken. This complete dataset is then processed in the same way as the 'Basic' variant.
+# This will be achieved by performing a 2-way ANOVA, then generating heat-maps of the proteins.
+
+
+
 
 #### Preparation ####
 # To begin, the session will be cleaned by removing all variables.
@@ -39,7 +41,6 @@ IdxIntensCol = 9:44
 
 #### Loading and formatting data ####
 ProtTab_Full = read.csv(paste(DataFolder,ProteinFile, sep = ""), header =  TRUE)
-PepTab_Full = read.csv(paste(DataFolder,PeptideFile, sep = ""), header =  TRUE)
 
 # The header names are too long, so 'intensity' will be removed from them for brevity
 columnNames = gsub(".Intensity","", colnames(ProtTab_Full) [IdxIntensCol])
@@ -142,6 +143,22 @@ Function_savePlot = function(plot, filename, plotType) {
   } else {
     stop("Invalid plot type. Please specify 'boxplot' or 'histogram'.")
   }
+}
+
+### Median normalization
+Function_MedianNorm = function(data, index) {
+  # Generate a new protein table which will be the output
+  ProtTab_ANorm = data
+  
+  # Calculate the overall median of the intensities within the protein table
+  Value_overallMedian = median(as.vector(as.matrix(data[,index])))
+  
+  # On the intensity columns of the protein table, normalize
+  ProtTab_ANorm[, index] = apply(data[, index], 2, function(x) {
+    x * Value_overallMedian / median(x[which(x > 0)])
+  })
+  
+  return(ProtTab_ANorm)
 }
 
 ### Identification of triplicates with too little data
@@ -383,15 +400,10 @@ Function_drawHeatmap = function(data, ANOVA_output) {
 }
 
 ### Q-Q plot calculation for intensities
+# Requires as input a long format and log2(intensity)
 Function_calcQQ_int = function(data, title) {
-  # Calculate the log2 of the intensities
-  data = Function_takeLog2(data)
-  
-  # Lengthen the data frame
-  data_long = Function_makeLong(data)
-  
   # Subset the relevant data from the data frame
-  sub_data = data_long[, c("variable", "value")]
+  sub_data = data[, c("variable", "value")]
   
   # Calculate the Q-Q plot data
   output = qqplot(sub_data$value, ppoints(nrow(sub_data)), main = title)
@@ -423,7 +435,7 @@ Function_calcQQ_P = function(data) {
 }
 
 ### Q-Q plot drawing
-Function_drawQQ = function (QQPlot_data, plot_type) {
+Function_drawQQ = function (QQPlot_data, plot_type, title) {
   if (plot_type == "intensity") {
     # Convert the plot to a data frame
     QQ_data = data.frame(x = QQPlot_data$x, y = QQPlot_data$y)
@@ -432,7 +444,8 @@ Function_drawQQ = function (QQPlot_data, plot_type) {
     QQ_plot = ggplot(QQ_data, aes(x, y)) +
       geom_point() +
       xlab("Observed Quantiles") +
-      ylab("Theoretical Quantiles")
+      ylab("Theoretical Quantiles") +
+      ggtitle(title)
     
     return(QQ_plot)
     
@@ -447,7 +460,8 @@ Function_drawQQ = function (QQPlot_data, plot_type) {
       xlab("Observed Quantiles") +
       ylab("Theoretical Quantiles") +
       xlim(0, 1) +
-      ylim(0, 1)
+      ylim(0, 1) +
+      ggtitle(title)
     
     return(QQ_plot)
   }
@@ -456,47 +470,40 @@ Function_drawQQ = function (QQPlot_data, plot_type) {
 
 
 
-#### Histogram before mean imputation and normalization ####
+#### !!! BEGINNING OF OVERALL DATA PROCESSING: NO DIFFERENCES BETWEEN THE 4 METHODS !!! ####
+## The data needs to be prepared first, which includes visualization of the data
+
+#### Histogram before imputation and before normalization ####
 ## Data preparation
-Data_Hist_BNorm = Function_subset(ProtTab_Full, IdxIntensCol)
-Data_Hist_BNorm = Function_takeLog2(Data_Hist_BNorm)
-Data_Hist_BNorm = Function_makeLong(Data_Hist_BNorm)
+Data_BNorm = Function_subset(ProtTab_Full, IdxIntensCol)
+Data_BNorm = Function_takeLog2(Data_BNorm)
+Data_BNorm = Function_makeLong(Data_BNorm)
 
 ## Draw the histogram
-Plot_Hist_intensityBNorm = Function_drawHistogram(Data_Hist_BNorm$value, "log2(Intensity) distribution before normalization and imputation")
+Plot_Hist_BNorm = Function_drawHistogram(Data_BNorm$value, "log2(Intensity) distribution before normalization and imputation")
 
 ## Save the histogram
-Function_savePlot(Plot_Hist_intensityBNorm, filename = "Intensity_Distribution_BeforeNormImput_Full.png", plotType = "histogram")
+Function_savePlot(Plot_Hist_BNorm, filename = "Histogram_Intensity_Distribution_BNorm_Full.png", plotType = "histogram")
 
 
 
 
-#### Boxplot before normalization, no imputation, remove those proteins where there's even one value that is 0 ####
-## Data preparation, subset data, remove those proteins where values are missing, take log2, make long format
-Data_Box_BNorm = Function_subset(ProtTab_Full, IdxIntensCol)
-Data_Box_BNorm = Function_NoZero_wide(Data_Box_BNorm)
-Data_Box_BNorm = Function_takeLog2(Data_Box_BNorm)
-Data_Box_BNorm = Function_makeLong(Data_Box_BNorm)
-
-# Add a column containing information based on which the point color is defined
-Data_Box_BNorm = Function_add_colorColumn(Data_Box_BNorm)
+#### Boxplot before imputation and before normalization ####
+# Add a column to define violin plot color
+Data_BNorm = Function_add_colorColumn(Data_BNorm)
 
 # Make the boxplot of the data before normalization
-Plot_Box_BNorm = Function_drawBoxplot(Data_Box_BNorm, title = "log2 intensity distribution before normalization")
+Plot_Box_BNorm = Function_drawBoxplot(Data_BNorm, title = "log2 intensity distribution before normalization")
 
 ## Print the plot and save it as a PNG
-Function_savePlot(Plot_Box_BNorm, filename = "non_normalized_data_Full.png", plotType = "boxplot")
+Function_savePlot(Plot_Box_BNorm, filename = "Boxplot_data_Full.png", plotType = "boxplot")
 
 
 
 
-#### Median normalization ####
-ProtTab_ANorm = ProtTab_Full # The new table for the normalized data
-Value_overallMedian = median(as.vector(as.matrix(ProtTab_Full[,IdxIntensCol]))) # The overall median is calculated and used as a point for normalization
-
-ProtTab_ANorm[,IdxIntensCol] = apply(ProtTab_Full[,IdxIntensCol], 2, function(x){ # On the intensity columns, a function is applied per column
-  x*Value_overallMedian/median(x[which(x>0)])}) # This involves calculating the median for all values above 0, then calculating the ratio between the overall median and this column median, and normalizing each value in the column with it.
-
+#### Median normalization of all data ####
+# Execute the function, generating the full protein table but normalized
+ProtTab_ANorm = Function_MedianNorm(ProtTab_Full, IdxIntensCol)
 
 # Subset relevant data from the full normalized protein table
 Data_ANorm = Function_subset(ProtTab_ANorm, IdxIntensCol)
@@ -504,41 +511,90 @@ Data_ANorm = Function_subset(ProtTab_ANorm, IdxIntensCol)
 # Add the accession numbers as the row names
 Data_ANorm = Function_setAccession(Data_ANorm, ProtTab_Full)
 
-# Remove excess files
-rm(Value_overallMedian)
 
 
 
-
-#### Boxplot after normalization, but before imputation ####
+#### Boxplot after normalization ####
 ## Data preparation
-Data_Box_ANorm = Function_takeLog2(Data_ANorm)
-Data_Box_ANorm[Data_Box_ANorm == -Inf] = 0 # Replace -Inf values (which were generated by taking the log2 of 0 or negative post-normalization values) with 0
-Data_Box_ANorm = Function_makeLong(Data_Box_ANorm)
-Data_Box_ANorm = subset(Data_Box_ANorm, value !=0) # Remove all values that are 0
+# Take the log2 of the intensities
+Data_ANorm = Function_takeLog2(Data_ANorm)
+
+# Replace -Inf values with 0, which were generated by taking the log2 of 0 or negative post-normalization values. Then convert all zeros to NA.
+Data_ANorm[Data_ANorm == -Inf] = 0
+Data_ANorm[Data_ANorm == 0] = NA
+
+# Make the table long
+Data_ANorm = Function_makeLong(Data_ANorm)
 
 # Add a column containing information based on which the point color is defined
-Data_Box_ANorm = Function_add_colorColumn(Data_Box_ANorm)
+Data_ANorm = Function_add_colorColumn(Data_ANorm)
 
 # Make the boxplot of the data after normalization
-Plot_Box_ANorm = Function_drawBoxplot(Data_Box_ANorm, title = "log2 intensity distribution after normalization")
+Plot_Box_ANorm = Function_drawBoxplot(Data_ANorm, title = "log2 intensity distribution after normalization")
 
 # Print and save the boxplot
-Function_savePlot(Plot_Box_ANorm, filename = "normalized_data_Full.png", plotType = "boxplot")
+Function_savePlot(Plot_Box_ANorm, filename = "Boxplot_normalized_data_Full.png", plotType = "boxplot")
 
 
 
 
-#### Normalized intensity normality analysis with Q-Q plots ####
-## Calculations
-QQData_intensity_preImp = Function_calcQQ_int(Data_ANorm, "Q-Q Plot: Normalized Intensities")
+#### Q-Q plots of normalized analysis to determine data normality ####
+# Calculations
+QQData_intensity = Function_calcQQ_int(Data_ANorm, "Q-Q Plot: Normalized Intensities")
 
-## Drawing the plot
-Plot_QQ_intensity_preImp = Function_drawQQ(QQData_intensity_preImp, "intensity")
+# Drawing the plot
+Plot_QQ_intensity = Function_drawQQ(QQData_intensity, "intensity", "Q-Q Plot: Normalized Intensities")
 
 ## Printing and saving the plot
-print(Plot_QQ_intensity_preImp)
-ggsave("QQPlot_intensity_Full.png", plot = Plot_QQ_intensity_preImp, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
+print(Plot_QQ_intensity)
+ggsave("QQPlot_intensity_Full.png", plot = Plot_QQ_intensity, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
+
+
+
+#### !!!! WORKING ON THE STUFF BELOW HERE! !!!! ####
+#### Histogram showing the degree of missing values ####
+# Create a new data file containing the 
+# Calculate the percentage of missing values per protein
+Data_PercentageZero_ANorm = data.frame(Percentage_Zero = rowMeans(Data_ANorm == 0) * 100)
+
+# Create a new variable for the bins (0-10%, 10-20%, ..., 90-100%)
+Data_PercentageZero_ANorm$Bin = cut(Data_PercentageZero_ANorm$Percentage_Zero, breaks = c(seq(0, 90, by = 10), 100), right = FALSE, labels = FALSE)
+
+# Count the number of proteins in each bin
+Data_PercentageZeroCounts = table(Data_PercentageZero_ANorm$Bin)
+
+# Convert the table to a data frame
+Data_PercentageZeroCounts = as.data.frame(Data_PercentageZeroCounts)
+names(Data_PercentageZeroCounts) = c("Bin", "Count")
+Data_PercentageZeroCounts$Bin = as.numeric(Data_PercentageZeroCounts$Bin) -1
+
+# Generate the labels for the x-axis
+bin_labels = paste0(Data_PercentageZeroCounts$Bin * 10, "%-", (Data_PercentageZeroCounts$Bin + 1) * 10 - 1, "%")
+
+# Plot the histogram
+Plot_Hist_PercentageZero_ANorm = ggplot(Data_PercentageZeroCounts, aes(x = reorder(bin_labels, -Count), y = Count)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  xlab("Percentage Range") +
+  ylab("Number of Proteins") +
+  ggtitle("Distribution of Missing Values per Protein") +
+  scale_x_discrete(labels = bin_labels) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# Print the plot
+print(Plot_Hist_PercentageZero_ANorm)
+
+# Save the histogram
+ggsave("Distribution_MissingValues_PerProtein_ANorm.png", plot = Plot_Hist_PercentageZero_ANorm, width = 10, height = 6, dpi = 300)
+
+
+
+
+#### !!! BEGINNING OF DATA PROCESSING METHOD 1: ONLY PROTEINS WITH FULL DATA !!! ####
+## In this method, no imputation is performed. Any proteins that don't have full data will be removed.
+
+
+
+
 
 
 
