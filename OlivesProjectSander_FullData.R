@@ -18,6 +18,12 @@ library(dplyr)
 library(tidyr)
 library(pheatmap)
 library(data.table)
+library(scales)
+library(tidyverse)
+library(UniProt.ws)
+library(MASS)
+library(gProfileR)
+library(gprofiler2)
 
 # Setting the working directory
 setwd("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New")
@@ -39,8 +45,7 @@ PepTab_Full = read.csv(paste(DataFolder,PeptideFile, sep = ""), header =  TRUE)
 columnNames = gsub(".Intensity","", colnames(ProtTab_Full) [IdxIntensCol])
 colnames(ProtTab_Full) [IdxIntensCol] = columnNames
 
-# The data contains triplicate samples measured in duplicate of 2 factors (control and treated) and 3 groups (resistent, intermediair, sensitive).
-# To make handling specific data easier, for example when calculating averages, well-defined label objects are created.
+# Create object defining various labels, to be used in future code.
 labels = strsplit(columnNames, "_") # The column names are separated based on "_", so a table is formed with the following structure of columns: factor, group, replicate, measurement duplicate.
 labelTreatment = unlist(lapply(labels, function(x) x[1])) # The first column, treatment, is isolated
 labelStrain = unlist(lapply(labels, function(x) x[2])) # The second column, strain, is isolated
@@ -48,69 +53,440 @@ labelReplicate = unlist(lapply(labels, function(x) x[3])) # The third column, re
 labelTreatmentStrainRep = paste(labelTreatment, labelStrain, labelReplicate, sep = "_") # The three columns are reassembled into new labels containing only vital information
 labelTreatmentStrainUnique = unique(labelTreatmentStrainRep) # The duplicates are removed
 
+# Define plot formats
+BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
+
+
+
+
+#### Define the functions ####
+
+### Subset data
+Function_subset = function(data, index) {
+ data_sub = data[, index]
+ return(data_sub)
+}
+
+### Remove proteins with even one zero from a wide format data frame
+Function_NoZero_wide = function(data_wide) {
+  row_indices = rowSums(data_wide ==0) == 0
+  data_NoZero = data_wide[row_indices, ]
+  return(data_NoZero)
+}
+
+### Take log2 of values
+Function_takeLog2 = function(data) {
+  data_log2 = log2(data)
+  return(data_log2)
+}
+
+### Convert data to long format, with the option of excluding columns.
+Function_makeLong = function(data, exclude_columns = NULL) {
+  if (is.null(exclude_columns)) {
+    data_long = pivot_longer(data, cols = everything(), names_to = "variable", values_to = "value")
+  } else {
+    data_long = pivot_longer(data, cols = -all_of(exclude_columns), names_to = "variable", values_to = "value")
+  }
+  return(data_long)
+}
+
+### Set the rownames as the accession number of any source file
+Function_setAccession = function(data, accession_origin) {
+  rownames(data) = accession_origin$Accession
+  return(data)
+}
+
+### Drawing a histogram, involving only the plotting of the graph.
+Function_drawHistogram = function(data, title) {
+  # Create a data frame with a single column for the data
+  df = data.frame(value = data)
+  
+  # Create the histogram plot using ggplot2
+  ggplot(df, aes(x = value)) +
+    geom_histogram(binwidth = 1, fill = "skyblue", color = "black") +
+    labs(x = "log2(Intensity)", y = "Frequency", title = title)
+}
+
+### Adding a column called 'color' to a dataframe and filling it with the strain types
+Function_add_colorColumn = function(data) {
+  data$color = sapply(strsplit(as.character(data$variable), "_"), function(x) x[2])
+  return(data)
+}
+
+### Drawing a box plot, involving the adding of a column defining the color based on the variable, defining the format of the box plot, and the drawing of the plot itself.
+Function_drawBoxplot = function(data, title) {
+  plot = ggplot(data, aes(x = variable, y = value)) +
+    labs(title = title, y = "log2(intensity)", x = "samples") +
+    geom_violin(aes(col = color)) +
+    geom_boxplot(outlier.color = "black", width = 0.21) +
+    BoxplotFormat1
+  
+  return(plot)
+}
+
+### Printing and saving the histogram or boxplot
+Function_savePlot = function(plot, filename, plotType) {
+  if (plotType == "boxplot") {
+    # Print the box plot
+    print(plot)
+    
+    # Save the box plot as a PNG
+    ggsave(filename, plot = plot, scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
+    
+  } else if (plotType == "histogram") {
+    # Print the box plot
+    print(plot)
+    
+    # Save the histogram
+    ggsave(filename, plot = plot, width = 8, height = 6, dpi = 300)
+  } else {
+    stop("Invalid plot type. Please specify 'boxplot' or 'histogram'.")
+  }
+}
+
+### Identification of triplicates with too little data
+Function_IdentBarrenProt = function(data) {
+  # Define a sub-function to count non-zero values in a row
+  Function_CountNonZero = function(row) {
+    sum(row != 0)
+  }
+  
+  # Apply the sub-function on each row to count non-zero values
+  Count_non_zero = apply(data, 1, Function_CountNonZero)
+  
+  # Find the row names where the non-zero count is 1 or less
+  Barren_Proteins = rownames(data)[Count_non_zero <= 1]
+  
+  return(Barren_Proteins)
+}
+
+### Mean imputation of a dataset, where each imputation is performed on one triplicate measurement. Those proteins where there's only one value will be removed.
+## Note: This function only acts upon a subset, so you need to select the subsets yourself.
+Function_TripMeanImput = function(data) {
+  # Define a sub-function for mean imputation over rows
+  Function_meanImput = function(row) {
+    row_mean = mean(row)
+    row[row == 0] = row_mean
+    return(row)
+  }
+  
+  # Apply the sub-function on the subset to impute the missing values
+  data = apply(data, 1, Function_meanImput)
+
+  # Transpose row- and column names
+    data = t(data)
+    
+    # Revert to data frames
+    data = data.frame(data)
+    
+    return(data)
+
+}
+
+### Duplicate averageing
+Function_duplicateAverageing = function(data, accession_origin_column) {
+  # Convert the data to a long format
+  data_long = Function_makeLong(data)
+  
+  # Remove the duplicate markings within the variable column
+  data_long$variable = gsub("_(1|2)$", "", data_long$variable)
+  
+  # Add another column to the table containing the accession numbers
+  data_long$Accession = rep(accession_origin_column, each = 36)
+  
+  # Reorganize the data frame
+  data_long = data_long[, c("Accession", "variable", "value")]
+  
+  # Average duplicates
+  data_mean = aggregate(value ~ Accession + variable, data = data_long, function(x) {
+    mean(x[x != 0])
+  })
+  
+  # Cast the modified melted dataframe back into a wide format
+  data_mean = data_mean %>%
+    pivot_wider(names_from = variable, values_from = value)
+  
+  # Set the wide data frame as a data frame
+  data_mean = as.data.frame(data_mean)
+  
+  # Make the accession numbers the row names and remove the Accession column
+  data_mean = Function_setAccession(data_mean, data_mean)
+  data_mean = data_mean[, !(names(data_mean) == "Accession")]
+  
+  return(data_mean)
+}
+
+#### Differential expression analysis with a 2-way ANOVA between controls and treated samples
+## Note: Keep in mind to make sure that the format of the 'data' data frame is correct. It should have the accession numbers as the row names, and only the raw intensities in the data frame itself.
+Function_performANOVA = function(data, p_value) {  
+  #   Create a new column for the accession numbers needed for the analysis
+  data$Accession = rownames(data)
+  
+  # Move the column to the beginning, removing the copy and the row names.
+  rownames(data) = NULL
+  data = data[, c("Accession", names(data)[-ncol(data)])]
+  
+  # Convert the data frame to a long format
+    Data_long = Function_makeLong(data, exclude_columns = "Accession")
+    
+    # Separate the variable column into 3
+    Data_long = separate(Data_long, variable, c("variable_type", "sensitivity_type", "replicate"))
+    
+    # Set the data types
+    Data_long$variable_type = as.factor(Data_long$variable_type)
+    Data_long$sensitivity_type = as.factor(Data_long$sensitivity_type)
+    Data_long$intensity = as.numeric(Data_long$value)
+    Data_long$replicate = as.factor(Data_long$replicate)
+    
+    ## Perform ANOVA for each protein and create the list of tables
+    list_Tab_ANOVA = Data_long %>%
+      group_by(Accession) %>%
+      summarize(
+        mean = mean(intensity),
+        sd = sd(intensity),
+        anova_result = list(aov(intensity ~ variable_type * sensitivity_type))
+      ) %>%
+      ungroup()
+    
+    # Extract information and create tables for each protein
+    list_of_tables = lapply(list_Tab_ANOVA$anova_result, function(anova) {
+      anova_summary = summary(anova)
+      p_values = anova_summary[[1]]$`Pr(>F)`
+      df = data.frame(
+        Variables = row.names(anova_summary[[1]]),
+        p_value = p_values,
+        stringsAsFactors = FALSE
+      )
+      return(df)
+    })
+    
+    # Assign the table names as the accession numbers
+    names(list_of_tables) = list_Tab_ANOVA$Accession
+    
+    ## Reformat the data
+    # Extract the table names into a vector
+    vector_tableNames = names(list_of_tables)
+    
+    # Extract the p-values for variable_type
+    vector_variableP = sapply(list_of_tables, function(table) table[1, 2])
+    
+    # Extract the p-values for sensitivity_type
+    vector_sensitivityP = sapply(list_of_tables, function(table) table[2, 2])
+    
+    # Extract the p-values for the interaction (variable_type:sensitivity_type)
+    vector_interactionP = sapply(list_of_tables, function(table) table[3, 2])
+    
+    # Reassemble the 4 columns into one table
+    Data_ANOVA = data.frame(
+      Accession = vector_tableNames,
+      Pvalue_variableType = vector_variableP,
+      Pvalue_sensitivityType = vector_sensitivityP,
+      Pvalue_interaction = vector_interactionP
+    )
+    
+    ## P-value adjustment with the Benjamini & Hochberg method
+    # Since vectors containing the p-values are already available, the method can be immediately executed
+    Adj_Pvalue_variableType = p.adjust(vector_variableP, method = "BH")
+    Adj_Pvalue_sensitivityType = p.adjust(vector_sensitivityP, method = "BH")
+    Adj_Pvalue_interaction = p.adjust(vector_interactionP, method = "BH")
+    
+    # Add the adjusted p-values to the heatmap data table
+    Data_ANOVA$Adj_Pvalue_variableType = Adj_Pvalue_variableType
+    Data_ANOVA$Adj_Pvalue_sensitivityType = Adj_Pvalue_sensitivityType
+    Data_ANOVA$Adj_Pvalue_interaction = Adj_Pvalue_interaction
+    
+    ## Data filtering
+    # Select only those proteins where the adjusted p-values of both variable_type and sensitivity_type are below 'p_value'
+    Selection_rows = Data_ANOVA$Adj_Pvalue_variableType < p_value & Data_ANOVA$Adj_Pvalue_sensitivityType < p_value & Data_ANOVA$Adj_Pvalue_interaction < p_value
+    
+    # Create the filtered data frame, which will contain the significant proteins
+    Data_ANOVA_signProteins = Data_ANOVA[Selection_rows, ]
+    
+    output = list(
+      list_Tab_ANOVA = list_Tab_ANOVA,
+      list_of_tables = list_of_tables,
+      Data_ANOVA = Data_ANOVA,
+      Data_ANOVA_signProteins = Data_ANOVA_signProteins
+    )
+    
+    return(output)
+}
+  
+### Heatmap generation
+Function_drawHeatmap = function(data, ANOVA_output) {
+  ## Data preparation
+  # Create a new column for the accession numbers needed for the analysis
+  data$Accession = rownames(data)
+  
+  # Move the column to the beginning, removing the copy and the row names.
+  rownames(data) = NULL
+  data = data[, c("Accession", names(data)[-ncol(data)])]
+  
+  # Convert the data frame to a long format
+  Data_long = Function_makeLong(data, exclude_columns = "Accession")
+  
+  # Separate the variable column into 3
+  Data_long = separate(Data_long, variable, c("variable_type", "sensitivity_type", "replicate"))
+  
+  # Set the data types
+  Data_long$variable_type = as.factor(Data_long$variable_type)
+  Data_long$sensitivity_type = as.factor(Data_long$sensitivity_type)
+  Data_long$intensity = as.numeric(Data_long$value)
+  Data_long$replicate = as.factor(Data_long$replicate)
+  
+  ## Heatmap data prep
+  # Create a vector containing the accession numbers of the significant proteins
+  Sign_Prot = ANOVA_output$Data_ANOVA_signProteins$Accession
+  
+  # Subset the intensity data frame to retain only significant proteins
+  sub_data = subset(Data_long, Accession %in% Sign_Prot)
+  
+  # Convert the intensities to log2 to decrease variance between samples.
+  sub_data = subset(Data_long, Accession %in% Sign_Prot)
+  names(sub_data)[5] = "log2_intensity"
+  
+  # Calculate the overall mean of all the significant protein intensities individually
+  Data_meanSD = aggregate(log2_intensity ~ Accession, data = sub_data, FUN = mean)
+  colnames(Data_meanSD)[2] = "overall_mean"
+  
+  # Calculate the standard deviation for each mean and add it to the data frame
+  data_sd = aggregate(log2_intensity ~ Accession, data = sub_data, FUN = sd)
+  colnames(data_sd)[2] = "overall_sd"
+  Data_meanSD = merge(Data_meanSD, data_sd, by = "Accession")
+  
+  # Calculate the z-values
+  Data_heatmap = data.frame(sub_data, z_value = (sub_data$log2_intensity - Data_meanSD$overall_mean[match(sub_data$Accession, Data_meanSD$Accession)]) / Data_meanSD$overall_sd[match(sub_data$Accession, Data_meanSD$Accession)])
+  
+  # Ensure the z_value column is numeric
+  Data_heatmap$z_value = as.numeric(as.character(Data_heatmap$z_value))
+  
+  # Select the relevant columns from Data_heatmap
+  rel_col = Data_heatmap[, c("Accession", "variable_type", "sensitivity_type", "replicate", "z_value")]
+  rel_col$z_value = as.numeric(as.character(rel_col$z_value))
+  
+  # Pivot the data to create a matrix with proteins as rows and combinations as columns
+  Matrix_heatmap = reshape2::dcast(rel_col, Accession ~ variable_type + sensitivity_type + replicate, 
+                                   value.var = "z_value")
+  
+  # Convert the 'accession' column into row names and delete the column
+  rownames(Matrix_heatmap) = Matrix_heatmap$Accession
+  Matrix_heatmap$Accession = NULL
+  
+  ## Draw the heatmap
+  # Specify a randomized number to ensure a reproducible heatmap
+  set.seed(12345)
+  
+  # Create the heatmap based on the matrix
+  Plot_heatmap = pheatmap(Matrix_heatmap, clustering_distance_rows = "euclidean", clustering_distance_cols = "euclidean")
+  
+  return(Plot_heatmap)
+}
+
+### Q-Q plot calculation for intensities
+Function_calcQQ_int = function(data, title) {
+  # Calculate the log2 of the intensities
+  data = Function_takeLog2(data)
+  
+  # Lengthen the data frame
+  data_long = Function_makeLong(data)
+  
+  # Subset the relevant data from the data frame
+  sub_data = data_long[, c("variable", "value")]
+  
+  # Calculate the Q-Q plot data
+  output = qqplot(sub_data$value, ppoints(nrow(sub_data)), main = title)
+  
+  return(output)
+}
+
+### Q-Q plot calculation for p-values
+Function_calcQQ_P = function(data) {
+  # Subset the data
+  sub_data = data[, c("Accession", "Adj_Pvalue_variableType", "Adj_Pvalue_sensitivityType", "Adj_Pvalue_interaction")]
+  
+  ## Generate the sub-plots
+  # Variable type
+  QQ_variable = qqplot(sub_data$Adj_Pvalue_variableType, ppoints(nrow(sub_data)), main = "Q-Q Plot: Variable Type")
+  
+  # Sensitivity type
+  QQ_sensitivity = qqplot(sub_data$Adj_Pvalue_sensitivityType, ppoints(nrow(sub_data)), main = "Q-Q Plot: Sensitivity Type")
+  
+  # Interaction
+  QQ_interaction = qqplot(sub_data$Adj_Pvalue_interaction, ppoints(nrow(sub_data)), main = "Q-Q Plot: Interaction")
+  
+  # Combined factors
+  sub_data_full = c(sub_data$Adj_Pvalue_variableType, sub_data$Adj_Pvalue_sensitivityType, sub_data$Adj_Pvalue_interaction)
+  QQ_combined = qqplot(sub_data_full, ppoints(length(sub_data_full)), main = "Q-Q Plot: All factors")
+  
+  # Return the 4 plots as a list
+  list(QQ_variable = QQ_variable, QQ_sensitivity = QQ_sensitivity, QQ_interaction = QQ_interaction, QQ_combined = QQ_combined)
+}
+
+### Q-Q plot drawing
+Function_drawQQ = function (QQPlot_data, plot_type) {
+  if (plot_type == "intensity") {
+    # Convert the plot to a data frame
+    QQ_data = data.frame(x = QQPlot_data$x, y = QQPlot_data$y)
+    
+    # Plot this data frame with ggplot2
+    QQ_plot = ggplot(QQ_data, aes(x, y)) +
+      geom_point() +
+      xlab("Observed Quantiles") +
+      ylab("Theoretical Quantiles")
+    
+    return(QQ_plot)
+    
+  }
+  else if (plot_type == "p_values") {
+    # Convert the plot to a data frame
+    QQ_data = data.frame(x = QQPlot_data$x, y = QQPlot_data$y)
+    
+    # Plot this data frame with ggplot2
+    QQ_plot = ggplot(QQ_data, aes(x, y)) +
+      geom_point() +
+      xlab("Observed Quantiles") +
+      ylab("Theoretical Quantiles") +
+      xlim(0, 1) +
+      ylim(0, 1)
+    
+    return(QQ_plot)
+  }
+}
+
 
 
 
 #### Histogram before mean imputation and normalization ####
 ## Data preparation
-# Subset the relevant data
-DummyFrame = ProtTab_Full[, 9:44]
-
-# Calculate the log2 of all the intensities
-DummyFrame = log2(DummyFrame)
-
-# Convert the data into a long format
-Data_Hist_BNorm = pivot_longer(DummyFrame, cols = everything(), names_to = "Column", values_to = "log2_Intensity")
-rm(DummyFrame)
+Data_Hist_BNorm = Function_subset(ProtTab_Full, IdxIntensCol)
+Data_Hist_BNorm = Function_takeLog2(Data_Hist_BNorm)
+Data_Hist_BNorm = Function_makeLong(Data_Hist_BNorm)
 
 ## Draw the histogram
-Plot_Hist_intensityBNorm = hist(Data_Hist_BNorm$log2_Intensity, breaks = 30, col = "skyblue",
-                         xlab = "log2(Intensity)", ylab = "Frequency",
-                         main = "log2(Intensity) distribution before normalization and imputation")
+Plot_Hist_intensityBNorm = Function_drawHistogram(Data_Hist_BNorm$value, "log2(Intensity) distribution before normalization and imputation")
 
 ## Save the histogram
-dev.copy(png, "Intensity_Distribution_BeforeNormImput_Full.png", width = 8, height = 6, units = "in", res = 300)
-dev.off()
+Function_savePlot(Plot_Hist_intensityBNorm, filename = "Intensity_Distribution_BeforeNormImput_Full.png", plotType = "histogram")
+
 
 
 
 #### Boxplot before normalization, no imputation, remove those proteins where there's even one value that is 0 ####
-# Set up the data
-DummyFrame = ProtTab_Full[IdxIntensCol]
-
-# Turn the DummyFrame into a long data frame
-Data_Box_BNorm_NoZero = DummyFrame %>%
-  pivot_longer(cols = everything(), names_to = "variable", values_to = "value")
-
-# Remove the proteins with even one value that is 0
-Data_Box_BNorm_NoZero = subset(Data_Box_BNorm_NoZero, value !=0)
-
-# Log2 of the data
-Data_Box_BNorm_NoZero$value = log2(Data_Box_BNorm_NoZero$value)
+## Data preparation, subset data, remove those proteins where values are missing, take log2, make long format
+Data_Box_BNorm = Function_subset(ProtTab_Full, IdxIntensCol)
+Data_Box_BNorm = Function_NoZero_wide(Data_Box_BNorm)
+Data_Box_BNorm = Function_takeLog2(Data_Box_BNorm)
+Data_Box_BNorm = Function_makeLong(Data_Box_BNorm)
 
 # Add a column containing information based on which the point color is defined
-Data_Box_BNorm_NoZero = cbind(Data_Box_BNorm_NoZero, apply(as.data.frame(Data_Box_BNorm_NoZero$variable), 1, function(x){
-  unlist(strsplit(as.character(x), "_"))[2] # From the 'variable' column (which contains sample names) the 2nd word of the variable is taken and put in the new column
-}))
-colnames(Data_Box_BNorm_NoZero)[3] = "color" # Rename the 3rd column to "color"
-
-# Make a vector of the colors which the datapoints in the plots should have
-labelStraincolor = gsub ("Resistent", "green", labelStrain)
-labelStraincolor = gsub ("Intermediair", "red", labelStraincolor)
-labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
+Data_Box_BNorm = Function_add_colorColumn(Data_Box_BNorm)
 
 # Make the boxplot of the data before normalization
-BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
-Plot_Box_BNorm_NoZero = ggplot(Data_Box_BNorm_NoZero, aes(x = variable, y = value)) + 
-  labs(title = "log2 intensity distribution before normalization", y = "log2(intensity)", x = "samples") +
-  geom_violin(aes(col = color)) + 
-  geom_boxplot(outlier.color = "black", col = labelStraincolor, width=0.21) + BoxplotFormat1
+Plot_Box_BNorm = Function_drawBoxplot(Data_Box_BNorm, title = "log2 intensity distribution before normalization")
 
 ## Print the plot and save it as a PNG
-print(Plot_Box_BNorm_NoZero)
-ggsave("non_normalized_data_Full.png", plot = Plot_Box_BNorm_NoZero,
-       scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
-rm(DummyFrame)
+Function_savePlot(Plot_Box_BNorm, filename = "non_normalized_data_Full.png", plotType = "boxplot")
+
 
 
 
@@ -122,16 +498,11 @@ ProtTab_ANorm[,IdxIntensCol] = apply(ProtTab_Full[,IdxIntensCol], 2, function(x)
   x*Value_overallMedian/median(x[which(x>0)])}) # This involves calculating the median for all values above 0, then calculating the ratio between the overall median and this column median, and normalizing each value in the column with it.
 
 
-# Convert the data to log2(intensity) and set the file as a data frame
-Data_ANorm = as.data.frame(ProtTab_ANorm[,IdxIntensCol])
-Data_ANorm_log2 = log2(Data_ANorm)
-
-# Replace -Inf values (which were generated by taking the log2 of 0 or negative post-normalization values) with 0
-Data_ANorm_log2[Data_ANorm_log2 == -Inf] = 0
+# Subset relevant data from the full normalized protein table
+Data_ANorm = Function_subset(ProtTab_ANorm, IdxIntensCol)
 
 # Add the accession numbers as the row names
-rownames(Data_ANorm) = ProtTab_Full$Accession
-rownames(Data_ANorm_log2) = ProtTab_Full$Accession
+Data_ANorm = Function_setAccession(Data_ANorm, ProtTab_Full)
 
 # Remove excess files
 rm(Value_overallMedian)
@@ -140,163 +511,152 @@ rm(Value_overallMedian)
 
 
 #### Boxplot after normalization, but before imputation ####
-# Set up the data, and transform however needed (Same as before, just changed the data origin)
-Data_ANorm_log2_long = Data_ANorm_log2 %>%
-  pivot_longer(cols = everything(), names_to = "variable", values_to = "value")
-Data_ANorm_log2_long_NoZero = subset(Data_ANorm_log2_long, value !=0) # Remove all values that are 0
+## Data preparation
+Data_Box_ANorm = Function_takeLog2(Data_ANorm)
+Data_Box_ANorm[Data_Box_ANorm == -Inf] = 0 # Replace -Inf values (which were generated by taking the log2 of 0 or negative post-normalization values) with 0
+Data_Box_ANorm = Function_makeLong(Data_Box_ANorm)
+Data_Box_ANorm = subset(Data_Box_ANorm, value !=0) # Remove all values that are 0
 
-# Add a column containing information based on which the point color is defined (just changed the data origin)
-Data_ANorm_log2_long_NoZero = cbind(Data_ANorm_log2_long_NoZero, apply(as.data.frame(Data_ANorm_log2_long_NoZero$variable), 1, function(x){
-  unlist(strsplit(as.character(x), "_"))[2] # From the 'variable' column (which contains sample names) the 2nd word of the variable is taken and put in the new column
-}))
-colnames(Data_ANorm_log2_long_NoZero)[3] = "color" # Rename the 3rd column to "color"
+# Add a column containing information based on which the point color is defined
+Data_Box_ANorm = Function_add_colorColumn(Data_Box_ANorm)
 
-# Make a vector of the colors which the datapoints in the plots should have (same as before)
-labelStraincolor = gsub ("Resistent", "green", labelStrain)
-labelStraincolor = gsub ("Intermediair", "red", labelStraincolor)
-labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
+# Make the boxplot of the data after normalization
+Plot_Box_ANorm = Function_drawBoxplot(Data_Box_ANorm, title = "log2 intensity distribution after normalization")
 
-# Make the boxplot of the data before normalization
-BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
-Plot_Box_ANorm = ggplot(Data_ANorm_log2_long_NoZero, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization", y = "log2(intensity)", x = "samples") +
-  geom_violin(aes(col = color)) + geom_boxplot(outlier.color = "black", col = labelStraincolor, width=0.21) + BoxplotFormat1
+# Print and save the boxplot
+Function_savePlot(Plot_Box_ANorm, filename = "normalized_data_Full.png", plotType = "boxplot")
 
-## Print the plot and save it as a PNG
-print(Plot_Box_ANorm)
-ggsave("normalized_data_Full.png", plot = Plot_Box_ANorm,
-       scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
+
+
+
+#### Normalized intensity normality analysis with Q-Q plots ####
+## Calculations
+QQData_intensity_preImp = Function_calcQQ_int(Data_ANorm, "Q-Q Plot: Normalized Intensities")
+
+## Drawing the plot
+Plot_QQ_intensity_preImp = Function_drawQQ(QQData_intensity_preImp, "intensity")
+
+## Printing and saving the plot
+print(Plot_QQ_intensity_preImp)
+ggsave("QQPlot_intensity_Full.png", plot = Plot_QQ_intensity_preImp, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
+
+
+
+
+#### Histogram showing the percentages of zeros per protein before averageing and imputation ####
+# Calculate the percentage of missing values per protein
+Data_PercentageZero_ANorm = data.frame(Percentage_Zero = rowMeans(Data_ANorm == 0) * 100)
+
+# Create a new variable for the bins (0-10%, 10-20%, ..., 90-100%)
+Data_PercentageZero_ANorm$Bin = cut(Data_PercentageZero_ANorm$Percentage_Zero, breaks = c(seq(0, 90, by = 10), 100), right = FALSE, labels = FALSE)
+
+# Count the number of proteins in each bin
+Data_PercentageZeroCounts = table(Data_PercentageZero_ANorm$Bin)
+
+# Convert the table to a data frame
+Data_PercentageZeroCounts = as.data.frame(Data_PercentageZeroCounts)
+names(Data_PercentageZeroCounts) = c("Bin", "Count")
+Data_PercentageZeroCounts$Bin = as.numeric(Data_PercentageZeroCounts$Bin) -1
+
+# Generate the labels for the x-axis
+bin_labels = paste0(Data_PercentageZeroCounts$Bin * 10, "%-", (Data_PercentageZeroCounts$Bin + 1) * 10 - 1, "%")
+
+# Plot the histogram
+Plot_Hist_PercentageZero_ANorm = ggplot(Data_PercentageZeroCounts, aes(x = reorder(bin_labels, -Count), y = Count)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  xlab("Percentage Range") +
+  ylab("Number of Proteins") +
+  ggtitle("Distribution of Missing Values per Protein") +
+  scale_x_discrete(labels = bin_labels) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# Print the plot
+print(Plot_Hist_PercentageZero_ANorm)
+
+# Save the histogram
+ggsave("Distribution_MissingValues_PerProtein_ANorm.png", plot = Plot_Hist_PercentageZero_ANorm, width = 10, height = 6, dpi = 300)
 
 
 
 
 #### Averaging duplicates after normalization, but before imputation ####
 ### The previous plots contain duplicates of the same samples, so here they will be averaged
-
-## Create a dummy frame for the calculations
-# Create a dummy dataframe to contain the list of normalized (before log2) intensity per sample.
-DummyFrame1 = Data_ANorm %>%
-  pivot_longer(cols = everything(), names_to = "variable", values_to = "value")
-
-# Remove the final '_1' or '_2' so that in the next step the duplicates can be grouped and averaged.
-DummyFrame1$variable = gsub("_(1|2)$", "", DummyFrame1$variable) 
-
-# Generate an object containing the Accession numbers.
-Accession = ProtTab_ANorm$Accession 
-
-# Add a new column to the dummy dataframe containing the accession numbers, repeating the list for every sample.
-DummyFrame1$accession = rep(Accession, each = 36) 
-
-# Reorganize the dataframe
-DummyFrame1 = DummyFrame1[, c("accession", "variable", "value")] 
-
-# Now each value that has the same Accession number and the same sample duplicate can be averaged.
-Data_Amean_long = aggregate(value ~ accession + variable, data = DummyFrame1, function(x) {
-  mean(x[x != 0])
-})
-
-# Cast the modified melted dataframe back into a wide format
-Data_Amean_wide = Data_Amean_long %>%
-  pivot_wider(names_from = variable, values_from = value)
-
-# Remove the dummy frame
-rm(DummyFrame1)
+Data_AMean = Function_duplicateAverageing(Data_ANorm, ProtTab_ANorm$Accession)
 
 
 
 
 #### Plot the averaged pre-imputation data in a boxplot ####
 ## Set up the data, and transform however needed.
-Data_AMean = Data_Amean_long[c("variable", "value")]
+Data_Box_AMean = Function_takeLog2(Data_AMean)
+Data_Box_AMean = Function_makeLong(Data_Box_AMean)
+Data_Box_AMean = subset(Data_Box_AMean, value !=0) 
 
-# Remove all values that are 0
-Data_AMean_NoZero_log2 = subset(Data_AMean, value !=0) 
+# Add a column containing information based on which the point color is defined
+Data_Box_AMean = Function_add_colorColumn(Data_Box_AMean)
 
-# Make a log2 of all data
-Data_AMean_NoZero_log2$value = log2(Data_AMean_NoZero_log2$value) 
+# Make the boxplot of the data after normalization and averageing
+Plot_Box_AMean = Function_drawBoxplot(Data_Box_AMean, title = "log2 intensity distribution after normalization and duplicate averageing")
 
-# Add a column containing information based on which the point color is defined (just changed the data origin)
-Data_AMean_NoZero_log2 = cbind(Data_AMean_NoZero_log2, apply(as.data.frame(Data_AMean_NoZero_log2$variable), 1, function(x){
-  unlist(strsplit(as.character(x), "_"))[2] # From the 'variable' column (which contains sample names) the 2nd word of the variable is taken and put in the new column
-}))
-
-# Rename the 3rd column to "color"
-colnames(Data_AMean_NoZero_log2)[3] = "color" 
-
-# Make a vector of the colors which the datapoints in the plots should have (same as before)
-labelStraincolor = gsub ("Resistent", "green", labelStrain)
-labelStraincolor = gsub ("Intermediair", "red", labelStraincolor)
-labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
-
-# Make the boxplot of the data before normalization
-BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
-Plot_Box_AMean = ggplot(Data_AMean_NoZero_log2, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization and duplicate averageing", y = "log2(intensity)", x = "samples") +
-  geom_violin(aes(col = color)) + geom_boxplot(outlier.color = "black", aes(color = color), width=0.21) + BoxplotFormat1
-
-## Print the plot and save it as a PNG
-print(Plot_Box_AMean)
-ggsave("averaged_data_Full.png", plot = Plot_Box_AMean,
-       scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
+# Print and save the boxplot
+Function_savePlot(Plot_Box_AMean, filename = "averaged_data_Full.png", plotType = "boxplot")
 
 
 
 
-#### Imputation of missing values ####
+#### Mean imputation of missing values ####
 ### Mean imputation of those samples where at least 1 of the triplicates of each sample are >0. This will give a dataset of 6 values from which a mean can be taken, limiting the effects on the overall data.
+## Data preparation: Removing proteins that lack too much data for mean imputation
+# Make 6 subsets for individual triplicates
+subset_control_sensitive = subset(Data_ANorm, select = grepl("^Control_Sensitive", colnames(Data_ANorm)))
+subset_treated_sensitive = subset(Data_ANorm, select = grepl("^Treated_Sensitive", colnames(Data_ANorm)))
+subset_control_intermediair = subset(Data_ANorm, select = grepl("^Control_Intermediair", colnames(Data_ANorm)))
+subset_treated_intermediair = subset(Data_ANorm, select = grepl("^Treated_Intermediair", colnames(Data_ANorm)))
+subset_control_resistent = subset(Data_ANorm, select = grepl("^Control_Resistent", colnames(Data_ANorm)))
+subset_treated_resistent = subset(Data_ANorm, select = grepl("^Treated_Resistent", colnames(Data_ANorm)))
 
-## Prepare the data
-Data_Imput = Data_ANorm
+# Determine which proteins have 1 or less values within a row. This allows the future elimination of proteins with too little data.
+List_ProtBarren_CSens = Function_IdentBarrenProt(subset_control_sensitive)
+List_ProtBarren_TSens = Function_IdentBarrenProt(subset_treated_sensitive)
+List_ProtBarren_CInt = Function_IdentBarrenProt(subset_control_intermediair)
+List_ProtBarren_TInt = Function_IdentBarrenProt(subset_treated_intermediair)
+List_ProtBarren_CRes = Function_IdentBarrenProt(subset_control_resistent)
+List_ProtBarren_TRes = Function_IdentBarrenProt(subset_treated_resistent)
 
-# Make 6 subsets for individual triplicates, so they can be imputed later with greater ease
-# Subset: Control_Sensitive
+# Reassemble the lists into one list of all proteins where even one factor has too much missing data, then remove the subset lists
+List_ProtBarren = unique(c(List_ProtBarren_CSens, List_ProtBarren_TSens, List_ProtBarren_CInt, List_ProtBarren_TInt, List_ProtBarren_CRes, List_ProtBarren_TRes))
+rm(List_ProtBarren_CSens)
+rm(List_ProtBarren_TSens)
+rm(List_ProtBarren_CInt)
+rm(List_ProtBarren_TInt)
+rm(List_ProtBarren_CRes)
+rm(List_ProtBarren_TRes)
+
+### TEMPORARY CODE SECTION ###
+## Note: This code allows you to check which proteins were removed with their respective data. To make sure all is okay.
+Test_CheckProtBarren = Data_ANorm[rownames(Data_ANorm) %in% List_ProtBarren, ]
+
+### END OF TEMPORARY CODE SECTION ###
+
+# Make a subset of Data_ANorm containing only usable proteins, based on the list of barren proteins made above
+Data_Imput = Data_ANorm[!(rownames(Data_ANorm) %in% List_ProtBarren), ]
+
+## Mean imputation
+# Make 6 subsets for individual triplicates
 subset_control_sensitive = subset(Data_Imput, select = grepl("^Control_Sensitive", colnames(Data_Imput)))
-
-# Subset: Treated_Sensitive
 subset_treated_sensitive = subset(Data_Imput, select = grepl("^Treated_Sensitive", colnames(Data_Imput)))
-
-# Subset: Control_Intermediair
 subset_control_intermediair = subset(Data_Imput, select = grepl("^Control_Intermediair", colnames(Data_Imput)))
-
-# Subset: Treated_Intermediair
 subset_treated_intermediair = subset(Data_Imput, select = grepl("^Treated_Intermediair", colnames(Data_Imput)))
-
-# Subset: Control_Resistent
 subset_control_resistent = subset(Data_Imput, select = grepl("^Control_Resistent", colnames(Data_Imput)))
-
-# Subset: Treated_Resistent
 subset_treated_resistent = subset(Data_Imput, select = grepl("^Treated_Resistent", colnames(Data_Imput)))
 
-## Imputation of each sample
-# Define a function for mean imputation
-Function_meanImput = function(row) {
-  row_mean = mean(row)
-  row[row == 0] = row_mean
-  return(row)
-}
-
-# Apply the function to each subset data frame
-subset_control_sensitive = apply(subset_control_sensitive, 1, Function_meanImput)
-subset_treated_sensitive = apply(subset_treated_sensitive, 1, Function_meanImput)
-subset_control_intermediair = apply(subset_control_intermediair, 1, Function_meanImput)
-subset_treated_intermediair = apply(subset_treated_intermediair, 1, Function_meanImput)
-subset_control_resistent = apply(subset_control_resistent, 1, Function_meanImput)
-subset_treated_resistent = apply(subset_treated_resistent, 1, Function_meanImput)
-
-## Output data management
-# Transpose the row- and column names
-subset_control_sensitive = t(subset_control_sensitive)
-subset_treated_sensitive = t(subset_treated_sensitive)
-subset_control_intermediair = t(subset_control_intermediair)
-subset_treated_intermediair = t(subset_treated_intermediair)
-subset_control_resistent = t(subset_control_resistent)
-subset_treated_resistent = t(subset_treated_resistent)
-
-# Revert the subsets to data frames
-subset_control_sensitive = data.frame(subset_control_sensitive)
-subset_treated_sensitive = data.frame(subset_treated_sensitive)
-subset_control_intermediair = data.frame(subset_control_intermediair)
-subset_treated_intermediair = data.frame(subset_treated_intermediair)
-subset_control_resistent = data.frame(subset_control_resistent)
-subset_treated_resistent = data.frame(subset_treated_resistent)
+# Perform mean imputation over the triplicates
+subset_control_sensitive = Function_TripMeanImput(subset_control_sensitive)
+subset_treated_sensitive = Function_TripMeanImput(subset_treated_sensitive)
+subset_control_intermediair = Function_TripMeanImput(subset_control_intermediair)
+subset_treated_intermediair = Function_TripMeanImput(subset_treated_intermediair)
+subset_control_resistent = Function_TripMeanImput(subset_control_resistent)
+subset_treated_resistent = Function_TripMeanImput(subset_treated_resistent)
 
 # Reassemble the 6 separate data frames into one full data set
 Data_Imput = as.data.frame(cbind(subset_control_sensitive, subset_treated_sensitive, subset_control_intermediair, subset_treated_intermediair, subset_control_resistent, subset_treated_resistent))
@@ -309,531 +669,120 @@ rm(subset_treated_intermediair)
 rm(subset_control_resistent)
 rm(subset_treated_resistent)
 
-# Generate a log2 intensity file as well
-Data_Imput_log2 = log2(Data_Imput)
-
 
 
 
 #### Imputation method 1: Remove those proteins which still lack data ####
 ## All the visualization and extra code will be written immediately below it. Then the replacement imputation method will be below that.
 Data_ImpNoZero = Data_Imput[rowSums(Data_Imput == 0) == 0, ]
-Data_ImpNoZero_log2 = Data_Imput_log2[rowSums(Data_Imput == 0) == 0, ]
 
 
 
 
 #### Histogram to show log2(intensity) distribution after normalization and mean imputation, while removing those proteins that had too little data ####
-# Convert the data into a long format
-Data_Hist_ANorm_NoZero_long = pivot_longer(as.data.frame(Data_ImpNoZero_log2), cols = everything(), names_to = "variable", values_to = "log2_Intensity")
+# Prepare the data
+Data_Hist_ImpNoZero = Function_takeLog2(Data_ImpNoZero)
+Data_Hist_ImpNoZero = Function_makeLong(Data_Hist_ImpNoZero)
 
 ## Draw the histogram
-Plot_Hist_intensityANorm = hist(Data_Hist_ANorm_NoZero_long$log2_Intensity, breaks = 30, col = "skyblue",
-                               xlab = "log2(Intensity)", ylab = "Frequency",
-                               main = "log2(Intensity) distribution after normalization, mean imputation and zero removal")
+Plot_Hist_ImpNoZero = Function_drawHistogram(Data_Hist_ImpNoZero$value, title = "log2(Intensity) distribution after normalization, mean imputation and zero removal")
 
 ## Save the histogram
-dev.copy(png, "Intensity_Distribution_AfterNormImput_NoZero_Full.png", width = 8, height = 6, units = "in", res = 300)
-dev.off()
+Function_savePlot(Plot_Hist_ImpNoZero, "Intensity_Distribution_AfterNormImput_NoZero_Full.png", plotType = "histogram")
 
 
 
 
 #### Boxplot after normalization, mean imputation and removing proteins lacking data ####
-# To the long NoZero imputation file made for the histogram, add a column containing information based on which the point color is defined 
-Data_Hist_ANorm_NoZero_long = cbind(Data_Hist_ANorm_NoZero_long, apply(as.data.frame(Data_Hist_ANorm_NoZero_long$variable), 1, function(x){
-  unlist(strsplit(as.character(x), "_"))[2] # From the 'variable' column (which contains sample names) the 2nd word of the variable is taken and put in the new column
-}))
-colnames(Data_Hist_ANorm_NoZero_long)[3] = "color" # Rename the 3rd column to "color"
+# Data preparation
+Data_Box_ImpNoZero = Function_takeLog2(Data_ImpNoZero)
+Data_Box_ImpNoZero = Function_makeLong(Data_Box_ImpNoZero)
+Data_Box_ImpNoZero = Function_add_colorColumn(Data_Box_ImpNoZero)
 
-# Make a vector of the colors which the datapoints in the plots should have (same as before)
-labelStraincolor = gsub ("Resistent", "green", labelStrain)
-labelStraincolor = gsub ("Intermediair", "red", labelStraincolor)
-labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
-
-# Make the boxplot of the data before normalization
-BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
-Plot_Box_ImpNoZero = ggplot(Data_Hist_ANorm_NoZero_long, aes(x = variable, y = log2_Intensity)) + labs(title = "log2 intensity distribution after normalization and NoZero imputation", y = "log2(intensity)", x = "samples") +
-  geom_violin(aes(col = color)) + geom_boxplot(outlier.color = "black", col = labelStraincolor, width=0.21) + BoxplotFormat1
+# Draw the boxplot
+Plot_Box_ImpNoZero = Function_drawBoxplot(Data_Box_ImpNoZero, title = "log2 intensity distribution after normalization and NoZero imputation")
 
 ## Print the plot and save it as a PNG
-print(Plot_Box_ImpNoZero)
-ggsave("normalized_imput_NoZero_Full.png", plot = Plot_Box_ImpNoZero,
-       scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
+Function_savePlot(Plot_Box_ImpNoZero, "normalized_imput_NoZero_Full.png", plotType = "boxplot")
 
 
 
 
 #### Duplicate averageing after normalization, mean imputation, and removing proteins that still have missing values ####
-## Create a dummy frame for the calculations
-# Create a dummy dataframe to contain the list of normalized (before log2) intensity per sample.
-DummyFrame1 = Data_ImpNoZero %>%
-  pivot_longer(cols = everything(), names_to = "variable", values_to = "value")
-
-# Remove the final '_1' or '_2' so that in the next step the duplicates can be grouped and averaged.
-DummyFrame1$variable = gsub("_(1|2)$", "", DummyFrame1$variable) 
-
-# Generate an object containing the Accession numbers.
-Accession = rownames(Data_ImpNoZero)
-
-# Add a new column to the dummy dataframe containing the accession numbers, repeating the list for every sample.
-DummyFrame1$accession = rep(Accession, each = 36) 
-
-# Reorganize the dataframe
-DummyFrame1 = DummyFrame1[, c("accession", "variable", "value")] 
-
-# Now each value that has the same Accession number and the same sample duplicate can be averaged.
-Data_Amean_ImpNoZero_long = aggregate(value ~ accession + variable, data = DummyFrame1, function(x) {
-  mean(x[x != 0])
-})
-
-# Cast the modified melted dataframe back into a wide format
-Data_Amean_ImpNoZero_wide = Data_Amean_ImpNoZero_long %>%
-  pivot_wider(names_from = variable, values_from = value)
-
-# Remove the dummy frame
-rm(DummyFrame1)
-
-# Ensure that the data frame is in fact a data frame
-Data_Amean_ImpNoZero_wide = as.data.frame(Data_Amean_ImpNoZero_wide)
-
-# Set the 'accession' column as the row names
-row.names(Data_Amean_ImpNoZero_wide) = Data_Amean_ImpNoZero_wide$accession
-Data_Amean_ImpNoZero_wide$accession = NULL
+Accession_ImpNoZero = rownames(Data_ImpNoZero)
+Data_AMean_ImpNoZero = Function_duplicateAverageing(Data_ImpNoZero, Accession_ImpNoZero)
+rm(Accession_ImpNoZero)
 
 
 
 #### Plot the averaged post-imputation (NoZero) data in a boxplot ####
-## Set up the data, and transform however needed.
-Data_Box_Amean_ImpNoZero_log2 = Data_Amean_ImpNoZero_long[c("variable", "value")]
+## Data preparation
+Data_Box_AMean_ImpNoZero = Function_takeLog2(Data_AMean_ImpNoZero)
+Data_Box_AMean_ImpNoZero = Function_makeLong(Data_Box_AMean_ImpNoZero)
+Data_Box_AMean_ImpNoZero = Function_add_colorColumn(Data_Box_AMean_ImpNoZero)
 
-# Make a log2 of all data
-Data_Box_Amean_ImpNoZero_log2$value = log2(Data_Box_Amean_ImpNoZero_log2$value) 
-
-# Add a column containing information based on which the point color is defined (just changed the data origin)
-Data_Box_Amean_ImpNoZero_log2 = cbind(Data_Box_Amean_ImpNoZero_log2, apply(as.data.frame(Data_Box_Amean_ImpNoZero_log2$variable), 1, function(x){
-  unlist(strsplit(as.character(x), "_"))[2] # From the 'variable' column (which contains sample names) the 2nd word of the variable is taken and put in the new column
-}))
-
-# Rename the 3rd column to "color"
-colnames(Data_Box_Amean_ImpNoZero_log2)[3] = "color" 
-
-# Make a vector of the colors which the datapoints in the plots should have (same as before)
-labelStraincolor = gsub ("Resistent", "green", labelStrain)
-labelStraincolor = gsub ("Intermediair", "red", labelStraincolor)
-labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
-
-# Make the boxplot of the data before normalization
-BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
-Plot_Box_AMean_ImpNoZero = ggplot(Data_Box_Amean_ImpNoZero_log2, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization, duplicate averageing, and NoZero imputation", y = "log2(intensity)", x = "samples") +
-  geom_violin(aes(col = color)) + geom_boxplot(outlier.color = "black", aes(color = color), width=0.21) + BoxplotFormat1
+# Draw the boxplot
+Plot_Box_AMean_ImpNoZero = Function_drawBoxplot(Data_Box_AMean_ImpNoZero, title = "log2 intensity distribution after normalization, mean imputation, zero removal, and duplicate averageing")
 
 ## Print the plot and save it as a PNG
-print(Plot_Box_AMean_ImpNoZero)
-ggsave("Averaged_ImpNoZero_Full.png", plot = Plot_Box_AMean_ImpNoZero,
-       scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
+Function_savePlot(Plot_Box_AMean_ImpNoZero, "Averaged_ImpNoZero_Full.png", plotType = "boxplot")
 
 
 
 
-# ------------- The section below here is the same as the section above, but differs in the method of imputation -------------
-# Instead of removing those proteins with even one value that is 0, here the 0 values are replaced with the lowest non-0 value after normalization
 
-#### Imputation method 2: Replace 0 values with lowest non-0 value ####
-Value_Lowest = min(Data_Imput[Data_Imput > 0], na.rm = TRUE)
-Data_Imput_Replace = Data_Imput
-Data_Imput_Replace[Data_Imput_Replace == 0] = Value_Lowest
-rm(Value_Lowest)
-
-# Also make a log2 variant of the data frame
-Data_Imput_Replace_log2 = log2(Data_Imput_Replace)
-
-
-
-#### Histogram to show log2(intensity) distribution after normalization and mean imputation, and replacing 0-values with the lowest non-0 value ####
-# Convert the data into a long format
-Data_ImpRep_log2_long = Data_Imput_Replace_log2 %>%
-  pivot_longer(cols = everything(), names_to = "variable", values_to = "value")
-
-## Draw the histogram
-Plot_Hist_Intens_ImpRep = hist(Data_ImpRep_log2_long$value, breaks = 30, col = "skyblue",
-                               xlab = "log2(Intensity)", ylab = "Frequency",
-                               main = "log2(Intensity) distribution after normalization, mean imputation and zero replacement")
-
-## Save the histogram
-dev.copy(png, "Intensity_Distribution_ANorm_ImpRep_Full.png", width = 8, height = 6, units = "in", res = 300)
-dev.off()
-
-
-
-
-#### Boxplot after normalization, mean imputation and replacing missing values ####
-# To the long NoZero imputation file made for the histogram, add a column containing information based on which the point color is defined 
-Data_ImpRep_log2_long = cbind(Data_ImpRep_log2_long, apply(as.data.frame(Data_ImpRep_log2_long$variable), 1, function(x){
-  unlist(strsplit(as.character(x), "_"))[2] # From the 'variable' column (which contains sample names) the 2nd word of the variable is taken and put in the new column
-}))
-colnames(Data_ImpRep_log2_long)[3] = "color" # Rename the 3rd column to "color"
-
-# Make a vector of the colors which the datapoints in the plots should have (same as before)
-labelStraincolor = gsub ("Resistent", "green", labelStrain)
-labelStraincolor = gsub ("Intermediair", "red", labelStraincolor)
-labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
-
-# Make the boxplot of the data before normalization
-BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
-Plot_Box_ImpRep = ggplot(Data_ImpRep_log2_long, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization and zero replacement", y = "log2(intensity)", x = "samples") +
-  geom_violin(aes(col = color)) + geom_boxplot(outlier.color = "black", col = labelStraincolor, width=0.21) + BoxplotFormat1
-
-## Print the plot and save it as a PNG
-print(Plot_Box_ImpRep)
-ggsave("normalized_imput_Replace_Full.png", plot = Plot_Box_ImpRep,
-       scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
-
-
-
-
-#### Duplicate averageing after normalization, mean imputation, and replacing missing values ####
-## Create a dummy frame for the calculations
-# Create a dummy dataframe to contain the list of normalized (before log2) intensity per sample.
-DummyFrame1 = Data_Imput_Replace %>%
-  pivot_longer(cols = everything(), names_to = "variable", values_to = "value")
-
-# Remove the final '_1' or '_2' so that in the next step the duplicates can be grouped and averaged.
-DummyFrame1$variable = gsub("_(1|2)$", "", DummyFrame1$variable) 
-
-# Generate an object containing the Accession numbers.
-Accession = rownames(Data_Imput_Replace)
-
-# Add a new column to the dummy dataframe containing the accession numbers, repeating the list for every sample.
-DummyFrame1$accession = rep(Accession, each = 36) 
-
-# Reorganize the dataframe
-DummyFrame1 = DummyFrame1[, c("accession", "variable", "value")] 
-
-# Now each value that has the same Accession number and the same sample duplicate can be averaged.
-Data_Amean_ImpRep_long = aggregate(value ~ accession + variable, data = DummyFrame1, function(x) {
-  mean(x[x != 0])
-})
-
-# Cast the modified melted dataframe back into a wide format
-Data_Amean_ImpRep_wide = Data_Amean_ImpRep_long %>%
-  pivot_wider(names_from = variable, values_from = value)
-
-# Remove the dummy frame
-rm(DummyFrame1)
-
-# Ensure that the data frame is in fact a data frame
-Data_Amean_ImpRep_wide = as.data.frame(Data_Amean_ImpRep_wide)
-
-# Set the 'accession' column as the row names
-row.names(Data_Amean_ImpRep_wide) = Data_Amean_ImpRep_wide$accession
-Data_Amean_ImpRep_wide$accession = NULL
-
-
-
-
-#### Plot the averaged post-imputation (Replace) data in a boxplot ####
-## Set up the data, and transform however needed.
-Data_Box_Amean_ImpRep_log2 = Data_Amean_ImpRep_long[c("variable", "value")]
-
-# Make a log2 of all data
-Data_Box_Amean_ImpRep_log2$value = log2(Data_Box_Amean_ImpRep_log2$value) 
-
-# Add a column containing information based on which the point color is defined (just changed the data origin)
-Data_Box_Amean_ImpRep_log2 = cbind(Data_Box_Amean_ImpRep_log2, apply(as.data.frame(Data_Box_Amean_ImpRep_log2$variable), 1, function(x){
-  unlist(strsplit(as.character(x), "_"))[2] # From the 'variable' column (which contains sample names) the 2nd word of the variable is taken and put in the new column
-}))
-
-# Rename the 3rd column to "color"
-colnames(Data_Box_Amean_ImpRep_log2)[3] = "color" 
-
-# Make a vector of the colors which the datapoints in the plots should have (same as before)
-labelStraincolor = gsub ("Resistent", "green", labelStrain)
-labelStraincolor = gsub ("Intermediair", "red", labelStraincolor)
-labelStraincolor = gsub ("Sensitive", "blue", labelStraincolor)
-
-# Make the boxplot of the data before normalization
-BoxplotFormat1 = theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(family = "Helvetica", face = "bold", size = (15), hjust = 0.5)) # A format to turn the x-axis 90 degrees and change the title format.
-Plot_Box_AMean_ImpRep = ggplot(Data_Box_Amean_ImpRep_log2, aes(x = variable, y = value)) + labs(title = "log2 intensity distribution after normalization, duplicate averageing, mean imputation, and zero replacement", y = "log2(intensity)", x = "samples") +
-  geom_violin(aes(col = color)) + geom_boxplot(outlier.color = "black", aes(color = color), width=0.21) + BoxplotFormat1
-
-## Print the plot and save it as a PNG
-print(Plot_Box_AMean_ImpRep)
-ggsave("Averaged_ImpRep_Full.png", plot = Plot_Box_AMean_ImpRep,
-       scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
-
-
-# ------------ The stuff below here still needs to be finished. Depending on how we decide to handle remaining zeros ---------
-
-
-#### Differential expression analysis with a 2-way ANOVA between controls and treated samples ####
-## Filter the data
-# Initially, we will remove all proteins where even one value is 0. This is to make sure the ANOVA works. After this, this section will be edited again.
-ProtTab_Nonred_complete = ProtTab_Nonred[complete.cases(ProtTab_Nonred), ] # With the 'complete.cases()' function, only those rows where there is a complete dataset are selected.
-
-# Convert the data frame to a long one
-Data_long = gather(ProtTab_Nonred_complete, key="variable", value="intensity", -accession) # Uses the 'gather()' function to make turn the data frame into a long format.
-Data_long = separate(Data_long, variable, c("variable_type", "sensitivity_type", "replicate")) # Separate the column names from each other.
-
-# Sets the data types
-Data_long$variable_type = as.factor(Data_long$variable_type)
-Data_long$sensitivity_type = as.factor(Data_long$sensitivity_type)
-Data_long$intensity = as.numeric(Data_long$intensity)
-Data_long$replicate = as.factor(Data_long$replicate)
-
-## Perform ANOVA for each protein and create the list of tables
-list_Tab_ANOVA = Data_long %>%
-  group_by(accession) %>%
-  summarize(
-    mean = mean(intensity),
-    sd = sd(intensity),
-    anova_result = list(aov(intensity ~ variable_type * sensitivity_type))
-  ) %>%
-  ungroup()
-
-# Extract information and create tables for each protein
-list_of_tables = lapply(list_Tab_ANOVA$anova_result, function(anova) {
-  anova_summary = summary(anova)
-  p_values = anova_summary[[1]]$`Pr(>F)`
-  df = data.frame(
-    Variables = row.names(anova_summary[[1]]),
-    p_value = p_values,
-    stringsAsFactors = FALSE
-  )
-  return(df)
-})
-
-# Assign the table names as the accession numbers
-names(list_of_tables) = list_Tab_ANOVA$accession
-
-## Reformat the data in preparation for the heatmap
-# Extract the table names into a vector
-vector_tableNames = names(list_of_tables)
-
-# Extract the p-values for variable_type
-vector_variableP = c()
-
-for (i in 1:length(list_of_tables)) {
-  table = list_of_tables[[i]]
-  value = table[1, 2]
-  vector_variableP = c(vector_variableP, value)
-}
-
-# Extract the p-values for sensitivity_type
-vector_sensitivityP = c()
-
-for (i in 1:length(list_of_tables)) {
-  table = list_of_tables[[i]]
-  value = table[2, 2]
-  vector_sensitivityP = c(vector_sensitivityP, value)
-}
-
-# Extract the p-values for the interaction (variable_type:sensitivity_type)
-vector_interactionP = c()
-
-for (i in 1:length(list_of_tables)) {
-  table = list_of_tables[[i]]
-  value = table[3, 2]
-  vector_interactionP = c(vector_interactionP, value)
-}
-
-# Reassemble the 4 columns into one table
-Data_ANOVA = data.frame(Accession = vector_tableNames, Pvalue_variableType = vector_variableP, Pvalue_sensitivityType = vector_sensitivityP, Pvalue_interaction = vector_interactionP)
-
-## P-value adjustment with the Benjamini & Hochberg method
-# Since vectors containing the p-values are already available, the method can be immediately executed
-Adj_Pvalue_variableType = p.adjust(vector_variableP, method = "BH")
-Adj_Pvalue_sensitivityType = p.adjust(vector_sensitivityP, method = "BH")
-Adj_Pvalue_interaction = p.adjust(vector_interactionP, method = "BH")
-
-# Add the adjusted p-values to the heatmap data table
-Data_ANOVA$Adj_Pvalue_variableType = Adj_Pvalue_variableType
-Data_ANOVA$Adj_Pvalue_sensitivityType = Adj_Pvalue_sensitivityType
-Data_ANOVA$Adj_Pvalue_interaction = Adj_Pvalue_interaction
-
-## Data filtering
-# Select only those proteins where the p-values of both the adjusted variable_type and sensitivity_type are below 0.01
-Selection_rows = Data_ANOVA$Adj_Pvalue_variableType < 0.01 & Data_ANOVA$Adj_Pvalue_sensitivityType < 0.01 & Data_ANOVA$Adj_Pvalue_interaction < 0.01
-
-# Create the filtered data frame, which will contain the significant proteins
-Data_ANOVA_signProteins = Data_ANOVA[Selection_rows, ]
+#### NoZero: Differential expression analysis with a 2-way ANOVA between controls and treated samples ####
+## Perform the 2-way ANOVA with p-value adjustment
+Output_ANOVA_NoZero = Function_performANOVA(Data_AMean_ImpNoZero, p_value = 0.01)
 
 
 
 
 #### Heatmap generation ####
-## Data preparation
-# Create a vector containing the accession numbers of the significant proteins
-Vector_selected_proteins = Data_ANOVA_signProteins$Accession
+## Perform the heatmap generation
+Plot_Heat_NoZero = Function_drawHeatmap(Data_AMean_ImpNoZero, Output_ANOVA_NoZero)
 
-# Subset 'Data_long to retain only significant proteins
-Data_long_sign = subset(Data_long, accession %in% Vector_selected_proteins)
-
-# Convert the intensities to log2. This decreases variance between samples.
-Data_long_sign$intensity = log2(Data_long_sign$intensity)
-names(Data_long_sign)[5] = "log2_intensity"
-
-# Calculate the overall mean of all the significant protein intensities individually
-Data_meanSD = aggregate(log2_intensity ~ accession, data = Data_long_sign, FUN = mean)
-colnames(Data_meanSD)[2] = "overall_mean"
-
-# Calculate the standard deviation for each mean
-DummyFrame = aggregate(log2_intensity ~ accession, data = Data_long_sign, FUN = sd)
-colnames(DummyFrame)[2] = "overall_sd"
-
-# Add the column to the heatmap data frame
-Data_meanSD = merge(Data_meanSD, DummyFrame, by = "accession")
-rm(DummyFrame)
-
-# Calculate the z-values
-Data_heatmap = data.frame(Data_long_sign, z_value = (Data_long_sign$log2_intensity - Data_meanSD$overall_mean[match(Data_long_sign$accession, Data_meanSD$accession)]) / Data_meanSD$overall_sd[match(Data_long_sign$accession, Data_meanSD$accession)])
-
-# Ensure the z_value column is numeric
-Data_heatmap$z_value = as.numeric(as.character(Data_heatmap$z_value))
-
-# Select the relevant columns from Data_heatmap
-DummyFrame = Data_heatmap[, c("accession", "variable_type", "sensitivity_type", "replicate", "z_value")]
-DummyFrame$z_value = as.numeric(as.character(DummyFrame$z_value))
-
-# Pivot the data to create a matrix with proteins as rows and combinations as columns
-Matrix_heatmap = reshape2::dcast(DummyFrame, accession ~ variable_type + sensitivity_type + replicate, 
-                                 value.var = "z_value")
-
-# Convert the 'accession' column into row names and delete the column
-rownames(Matrix_heatmap) = Matrix_heatmap$accession
-Matrix_heatmap$accession = NULL
-
-# Specify a randomized number to ensure a reproducible heatmap
-set.seed(12345)
-
-# Create the heatmap using the matrix
-Plot_heatmap = pheatmap(Matrix_heatmap, clustering_distance_rows = "euclidean", clustering_distance_cols = "euclidean")
-
-rm(DummyFrame)
-
-## Print the plot and save it as a PNG
-print(Plot_heatmap)
-ggsave("Heatmap_Full.png", plot = Plot_heatmap,
+## Save the heatmap as a PNG
+ggsave("Heatmap_Full_NoZero.png", plot = Plot_Heat_NoZero,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
 
 
 
-#### Normalized intensity normality analysis with Q-Q plots ####
-## Prepare the data
-# Create a subset of the data frame containing only the relevant columns
-DummyFrame1 = Data_ANormNoZero[, c("variable", "value")]
+#### p-value normality analysis with Q-Q plots for the NoZero dataset where all proteins with even one remaining zero after imputation are removed ####
+## To determine how the p-values from the entire dataset are distributed, 4 Q-Q plots are made 
+## One for each factor, one for the interaction, and one for all the p-values.
+# Calculate the basic Q-Q plots
+Output_QQ_NoZero = Function_calcQQ_P(Output_ANOVA_NoZero$Data_ANOVA)
 
-## Generate the Q-Q plot for normalized intensities
-QQData_intensity = qqplot(DummyFrame1$value, ppoints(nrow(DummyFrame1)), main = "Q-Q Plot: Normalized Intensities")
-
-## Draw the Q-Q plots by converting the Q-Q plot into a data frame, and then using ggplot2 to plot it properly
-DummyFrame2 = data.frame(x = QQData_intensity$x, y = QQData_intensity$y)
-PlotQQ_intensity = ggplot(DummyFrame2, aes(x, y)) +
-  geom_point() +
-  xlab("Observed Quantiles") +
-  ylab("Theoretical Quantiles")
-
-## Print and save the plot
-print(PlotQQ_intensity)
-ggsave("QQPlot_intensity_Full.png", plot = PlotQQ_intensity, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
-
-## Remove the dummy frame
-rm(DummyFrame1)
-rm(DummyFrame2)
-
-
-#### p-value normality analysis with Q-Q plots ####
-# To determine how the p-values from the entire dataset are distributed, 4 Q-Q plots are made 
-# One for each factor, one for the interaction, and one for all the p-values.
-
-## Prepare the data
-# Create a subset of the data frame containing only the relevant columns
-DummyFrame1 = Data_ANOVA[, c("Accession", "Adj_Pvalue_variableType", "Adj_Pvalue_sensitivityType", "Adj_Pvalue_interaction")]
-
-## Generate the Q-Q plots
+## Draw the plots using ggplot2, then save them
 # Variable type
-QQData_variable = qqplot(DummyFrame1$Adj_Pvalue_variableType, ppoints(nrow(DummyFrame1)), main = "Q-Q Plot: Variable Type")
+Plot_QQ_P_variable_NoZero = Function_drawQQ(Output_QQ_NoZero$QQ_variable, plot_type = "p_values")
+print(Plot_QQ_P_variable_NoZero)
+ggsave("QQPlot_variable_NoZero.png", plot = Plot_QQ_P_variable_NoZero, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
 
 # Sensitivity type
-QQData_sensitivity = qqplot(DummyFrame1$Adj_Pvalue_sensitivityType, ppoints(nrow(DummyFrame1)), main = "Q-Q Plot: Sensitivity Type")
+Plot_QQ_P_sensitivity_NoZero = Function_drawQQ(Output_QQ_NoZero$QQ_sensitivity, plot_type = "p_values")
+print(Plot_QQ_P_sensitivity_NoZero)
+ggsave("QQPlot_sensitivity_NoZero.png", plot = Plot_QQ_P_sensitivity_NoZero, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
 
 # Interaction
-QQData_interaction = qqplot(DummyFrame1$Adj_Pvalue_interaction, ppoints(nrow(DummyFrame1)), main = "Q-Q Plot: Interaction")
+Plot_QQ_P_interaction_NoZero = Function_drawQQ(Output_QQ_NoZero$QQ_interaction, plot_type = "p_values")
+print(Plot_QQ_P_interaction_NoZero)
+ggsave("QQPlot_interaction_NoZero.png", plot = Plot_QQ_P_interaction_NoZero, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
 
 # Combined factors
-DummyFrame2 = c(DummyFrame1$Adj_Pvalue_variableType, DummyFrame1$Adj_Pvalue_sensitivityType, DummyFrame1$Adj_Pvalue_interaction) # Another subset is made with the combined p-values
-QQData_combined = qqplot(DummyFrame2, ppoints(length(DummyFrame2)), main = "Q-Q Plot: All factors")
-
-# Remove the DummyFrames
-rm(DummyFrame1)
-rm(DummyFrame2)
-
-## Draw the Q-Q plots by converting the Q-Q plots into data frames, and then using ggplot2 to plot them properly
-# Variable type
-DummyFrame = data.frame(x = QQData_variable$x, y = QQData_variable$y)
-PlotQQ_variable = ggplot(DummyFrame, aes(x, y)) +
-  geom_point() +
-  xlab("Observed Quantiles") +
-  ylab("Theoretical Quantiles") +
-  xlim(0, 1) +
-  ylim(0, 1)
-rm(DummyFrame)
-
-# Sensitivity type
-DummyFrame = data.frame(x = QQData_sensitivity$x, y = QQData_sensitivity$y)
-PlotQQ_sensitivity = ggplot(DummyFrame, aes(x, y)) +
-  geom_point() +
-  xlab("Observed Quantiles") +
-  ylab("Theoretical Quantiles") +
-  xlim(0, 1) +
-  ylim(0, 1)
-rm(DummyFrame)
-
-# Interaction
-DummyFrame = data.frame(x = QQData_interaction$x, y = QQData_interaction$y)
-PlotQQ_interaction = ggplot(DummyFrame, aes(x, y)) +
-  geom_point() +
-  xlab("Observed Quantiles") +
-  ylab("Theoretical Quantiles") +
-  xlim(0, 1) +
-  ylim(0, 1)
-rm(DummyFrame)
-
-# Combined factors
-DummyFrame = data.frame(x = QQData_combined$x, y = QQData_combined$y)
-PlotQQ_combined = ggplot(DummyFrame, aes(x, y)) +
-  geom_point() +
-  xlab("Observed Quantiles") +
-  ylab("Theoretical Quantiles") +
-  xlim(0, 1) +
-  ylim(0, 1)
-rm(DummyFrame)
-
-## Print and save the plots
-# Variable type
-print(PlotQQ_variable)
-ggsave("QQPlot_variable.png", plot = PlotQQ_variable, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
-
-# Sensitivity type
-print(PlotQQ_sensitivity)
-ggsave("QQPlot_sensitivity.png", plot = PlotQQ_sensitivity, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
-
-# Interaction
-print(PlotQQ_interaction)
-ggsave("QQPlot_interaction.png", plot = PlotQQ_interaction, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
-
-# Combined factors
-print(PlotQQ_combined)
-ggsave("QQPlot_combined.png", plot = PlotQQ_combined, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
+Plot_QQ_P_combined_NoZero = Function_drawQQ(Output_QQ_NoZero$QQ_combined, plot_type = "p_values")
+print(Plot_QQ_P_combined_NoZero)
+ggsave("QQPlot_combined_NoZero.png", plot = Plot_QQ_P_combined_NoZero, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
 
 
 
 
-#### Histogram of the p-value distribution of all proteins ####
+#### Histogram of the p-value distribution of all proteins of the NoZero dataset ####
 ## Data preparation
 # Subset the relevant data
-DummyFrame1 = Data_ANOVA[, c("Adj_Pvalue_variableType", "Adj_Pvalue_sensitivityType", "Adj_Pvalue_interaction")]
+DummyFrame1 = Output_ANOVA_NoZero$Data_ANOVA[, c("Adj_Pvalue_variableType", "Adj_Pvalue_sensitivityType", "Adj_Pvalue_interaction")]
 DummyFrame2 = setNames(data.frame(DummyFrame1$Adj_Pvalue_variableType), "P_values")
 DummyFrame3 = setNames(data.frame(DummyFrame1$Adj_Pvalue_sensitivityType), "P_values")
 DummyFrame4 = setNames(data.frame(DummyFrame1$Adj_Pvalue_interaction), "P_values")
@@ -850,40 +799,264 @@ DummyFrame5$P_values = as.numeric(DummyFrame5$P_values)
 
 ## Create the histograms
 # Variable type
-PlotHist_variable = hist(DummyFrame2$P_values, breaks = 10, col = "skyblue",
+PlotHist_variable_NoZero = hist(DummyFrame2$P_values, breaks = 10, col = "skyblue",
+                                xlab = "P-values", ylab = "Frequency",
+                                main = "P-value distribution of the variable factor of all proteins",
+                                xlim = c(0, 1))
+
+# Sensitivity type
+PlotHist_sensitivity_NoZero = hist(DummyFrame3$P_values, breaks = 10, col = "skyblue",
+                                   xlab = "P-values", ylab = "Frequency",
+                                   main = "P-value distribution of the sensitivity factor of all proteins",
+                                   xlim = c(0, 1))
+
+# Interaction
+PlotHist_interaction_NoZero = hist(DummyFrame4$P_values, breaks = 10, col = "skyblue",
+                                   xlab = "P-values", ylab = "Frequency",
+                                   main = "P-value distribution of the interaction between factor of all proteins",
+                                   xlim = c(0, 1))
+
+# Combined p-values
+PlotHist_combined_NoZero = hist(DummyFrame5$P_values, breaks = 10, col = "skyblue",
+                                xlab = "P-values", ylab = "Frequency",
+                                main = "Total p-value distribution of the all proteins",
+                                xlim = c(0, 1))
+
+## Save the plots
+dev.copy(png, "PValue_Distribution_variableType_NoZero.png", width = 8, height = 6, units = "in", res = 300)
+dev.off()
+
+dev.copy(png, "PValue_Distribution_sensitivityType_NoZero.png", width = 8, height = 6, units = "in", res = 300)
+dev.off()
+
+dev.copy(png, "PValue_Distribution_interaction_NoZero.png", width = 8, height = 6, units = "in", res = 300)
+dev.off()
+
+dev.copy(png, "PValue_Distribution_combined_NoZero.png", width = 8, height = 6, units = "in", res = 300)
+dev.off()
+
+# Remove the dummy frames
+rm(DummyFrame1)
+rm(DummyFrame2)
+rm(DummyFrame3)
+rm(DummyFrame4)
+rm(DummyFrame5)
+
+
+
+
+#### Protein ID conversion using UniProt ####
+## Prepare data
+# Make a vector of protein IDs to be converted
+Vector_ProteinIDs_Acc_NoZero = rownames(Data_AMean_ImpNoZero)
+
+# Extract only the relevant section of the accession number. So only the part after the second '|' symbol.
+Vector_ProteinIDs_Acc_NoZero = sub("^[^|]*\\|[^|]*\\|(.*)", "\\1", Vector_ProteinIDs_Acc_NoZero)
+
+## Convert the accession numbers to ensembl gene IDs
+Data_AccMapping = mapUniProt(from = "UniProtKB_AC-ID", to = 'GeneID', query = Vector_ProteinIDs_Acc_NoZero)
+Vector_ProteinIDs_NoZero = Data_AccMapping$To
+
+
+
+
+#### !!!! Using gProfiler for gene enrichment ####
+
+
+
+
+
+#### Imputation method 2: Replace 0 values with lowest non-0 value ####
+# Instead of removing those proteins with even one value that is 0, here the 0 values are replaced with the lowest non-0 value after normalization
+## Generate a smooth histogram
+# Generate a long variant of the median imputed data
+DummyFrame = Function_makeLong(Data_Imput)
+DummyFrame$value = log10(DummyFrame$value)
+DummyFrame = as.data.frame(DummyFrame)
+
+# Generate and print a smooth histogram of the data
+Plot_SmoothHist_ImpRep = ggplot(DummyFrame, aes(x = value)) +
+  geom_density(fill = "skyblue", color = "black", alpha = 0.5, bw = 0.15) +
+  labs(x = "log10(intensity)", y = "Density", title = "Smooth Histogram of log10 protein intensity")
+print(Plot_SmoothHist_ImpRep)
+
+## Fit a Gaussian distribution to the data
+# Generate the fit, mean, and standard deviation of the Gaussian distribution
+Data_Gaussian_Fit = fitdistr(DummyFrame$value, "normal")
+Value_Gaussian_Mu = Data_Gaussian_Fit$estimate[1]
+Value_Gaussian_Sigma = Data_Gaussian_Fit$estimate[2]
+
+# Calculate minus 3 sigma value, which is the log10 intensity point that will be used to replace missing values.
+Value_Gaussian_min3Sig = Value_Gaussian_Mu - 3 * Value_Gaussian_Sigma
+
+# Convert the log10 intensity back to regular intensity
+Value_Rep_min = 10^(Value_Gaussian_min3Sig)
+
+## Replace all zeros in the mean imputed dataset with the found lowest value
+Data_ImpRep = Data_Imput
+Data_ImpRep[Data_ImpRep == 0] = Value_Rep_min
+
+# Remove excessive files
+rm(DummyFrame)
+
+
+
+
+#### Histogram to show log2(intensity) distribution after normalization and mean imputation, and replacing 0-values with the lowest non-0 value ####
+# Prepare the data
+Data_Hist_ImpRep = Function_takeLog2(Data_ImpRep)
+Data_Hist_ImpRep = Function_makeLong(Data_Hist_ImpRep)
+
+## Draw the histogram
+Plot_Hist_ImpRep = Function_drawHistogram(Data_Hist_ImpRep$value, title = "log2(Intensity) distribution after normalization, mean imputation and zero replacement")
+
+## Print and save the histogram
+print(Plot_Hist_ImpRep)
+Function_savePlot(Plot_Hist_ImpRep, "Intensity_Distribution_ANorm_ImpRep_Full.png", plotType = "histogram")
+
+
+
+
+#### Boxplot after normalization, mean imputation and replacing missing values ####
+# Data preparation
+Data_Box_ImpRep = Function_takeLog2(Data_ImpRep)
+Data_Box_ImpRep = Function_makeLong(Data_Box_ImpRep)
+Data_Box_ImpRep = Function_add_colorColumn(Data_Box_ImpRep)
+
+# Draw the box plot
+Plot_Box_ImpRep = Function_drawBoxplot(Data_Box_ImpRep, title = "log2 intensity distribution after normalization, mean imputation, zero replacement, and duplicate averageing")
+
+## Print the plot and save it as a PNG
+Function_savePlot(Plot_Box_ImpRep, "normalized_imput_Replace_Full.png", plotType = "boxplot")
+
+
+
+
+#### Duplicate averageing after normalization, mean imputation, and replacing missing values ####
+Accession_ImpRep = rownames(Data_ImpRep)
+Data_AMean_ImpRep = Function_duplicateAverageing(Data_ImpRep, Accession_ImpRep)
+rm(Accession_ImpRep)
+
+
+
+
+#### Plot the post-imputation, zero replaced, averaged data in a boxplot ####
+# Data preparation
+Data_Box_AMean_ImpRep = Function_takeLog2(Data_ImpRep)
+Data_Box_AMean_ImpRep = Function_makeLong(Data_Box_AMean_ImpRep)
+Data_Box_AMean_ImpRep = Function_add_colorColumn(Data_Box_AMean_ImpRep)
+
+# Draw the box plot
+Plot_Box_AMean_ImpRep = Function_drawBoxplot(Data_Box_AMean_ImpRep, title = "log2 intensity distribution after normalization, duplicate averageing, mean imputation, and zero replacement")
+
+## Print the plot and save it as a PNG
+Function_savePlot(Plot_Box_AMean_ImpRep, "Averaged_ImpRep_Full.png", plotType = "boxplot")
+
+
+
+
+#### Differential expression analysis with a 2-way ANOVA between controls and treated samples ####
+# Note: This section tends to give an error if the entire code is launched in one go. Just execute it again and it should work.
+Output_ANOVA_Rep = Function_performANOVA(Data_AMean_ImpRep, p_value = 0.01)
+
+
+
+
+#### Heatmap generation ####
+## Perform the heatmap generation
+Plot_Heat_Rep = Function_drawHeatmap(Data_AMean_ImpRep, Output_ANOVA_Rep)
+
+## Save the heatmap as a PNG
+ggsave("Heatmap_Full_Rep.png", plot = Plot_Heat_Rep,
+       scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
+
+
+
+
+#### p-value normality analysis with Q-Q plots for the replacement dataset where all proteins with even one remaining zero after imputation are removed ####
+## To determine how the p-values from the entire dataset are distributed, 4 Q-Q plots are made 
+## One for each factor, one for the interaction, and one for all the p-values.
+# Calculate the basic Q-Q plots
+Output_QQ_Rep = Function_calcQQ_P(Output_ANOVA_Rep$Data_ANOVA)
+
+## Draw the plots using ggplot2, then save them
+# Variable type
+Plot_QQ_P_variable_Rep = Function_drawQQ(Output_QQ_Rep$QQ_variable, plot_type = "p_values")
+print(Plot_QQ_P_variable_Rep)
+ggsave("QQPlot_variable_Rep.png", plot = Plot_QQ_P_variable_Rep, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
+
+# Sensitivity type
+Plot_QQ_P_sensitivity_Rep = Function_drawQQ(Output_QQ_Rep$QQ_sensitivity, plot_type = "p_values")
+print(Plot_QQ_P_sensitivity_Rep)
+ggsave("QQPlot_sensitivity_Rep.png", plot = Plot_QQ_P_sensitivity_Rep, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
+
+# Interaction
+Plot_QQ_P_interaction_Rep = Function_drawQQ(Output_QQ_Rep$QQ_interaction, plot_type = "p_values")
+print(Plot_QQ_P_interaction_Rep)
+ggsave("QQPlot_interaction_Rep.png", plot = Plot_QQ_P_interaction_Rep, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
+
+# Combined factors
+Plot_QQ_P_combined_Rep = Function_drawQQ(Output_QQ_Rep$QQ_combined, plot_type = "p_values")
+print(Plot_QQ_P_combined_Rep)
+ggsave("QQPlot_combined_Rep.png", plot = Plot_QQ_P_combined_Rep, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
+
+
+
+
+#### Histogram of the p-value distribution of all proteins of the replacement dataset ####
+## Data preparation
+# Subset the relevant data
+DummyFrame1 = Output_ANOVA_Rep$Data_ANOVA[, c("Adj_Pvalue_variableType", "Adj_Pvalue_sensitivityType", "Adj_Pvalue_interaction")]
+DummyFrame2 = setNames(data.frame(DummyFrame1$Adj_Pvalue_variableType), "P_values")
+DummyFrame3 = setNames(data.frame(DummyFrame1$Adj_Pvalue_sensitivityType), "P_values")
+DummyFrame4 = setNames(data.frame(DummyFrame1$Adj_Pvalue_interaction), "P_values")
+DummyFrame5 = data.frame(P_values = (unlist(DummyFrame1)))
+
+# Ensure all columns are numeric
+DummyFrame1$Adj_Pvalue_variableType = as.numeric(DummyFrame1$Adj_Pvalue_variableType)
+DummyFrame1$Adj_Pvalue_sensitivityType = as.numeric(DummyFrame1$Adj_Pvalue_sensitivityType)
+DummyFrame1$Adj_Pvalue_interaction = as.numeric(DummyFrame1$Adj_Pvalue_interaction)
+DummyFrame2$P_values = as.numeric(DummyFrame2$P_values)
+DummyFrame3$P_values = as.numeric(DummyFrame3$P_values)
+DummyFrame4$P_values = as.numeric(DummyFrame4$P_values)
+DummyFrame5$P_values = as.numeric(DummyFrame5$P_values)
+
+## Create the histograms
+# Variable type
+PlotHist_variable_Rep = hist(DummyFrame2$P_values, breaks = 10, col = "skyblue",
                          xlab = "P-values", ylab = "Frequency",
                          main = "P-value distribution of the variable factor of all proteins",
                          xlim = c(0, 1))
 
 # Sensitivity type
-PlotHist_sensitivity = hist(DummyFrame3$P_values, breaks = 10, col = "skyblue",
+PlotHist_sensitivity_Rep = hist(DummyFrame3$P_values, breaks = 10, col = "skyblue",
                             xlab = "P-values", ylab = "Frequency",
                             main = "P-value distribution of the sensitivity factor of all proteins",
                             xlim = c(0, 1))
 
 # Interaction
-PlotHist_interaction = hist(DummyFrame4$P_values, breaks = 10, col = "skyblue",
+PlotHist_interaction_Rep = hist(DummyFrame4$P_values, breaks = 10, col = "skyblue",
                             xlab = "P-values", ylab = "Frequency",
                             main = "P-value distribution of the interaction between factor of all proteins",
                             xlim = c(0, 1))
 
 # Combined p-values
-PlotHist_combined = hist(DummyFrame5$P_values, breaks = 10, col = "skyblue",
+PlotHist_combined_Rep = hist(DummyFrame5$P_values, breaks = 10, col = "skyblue",
                          xlab = "P-values", ylab = "Frequency",
                          main = "Total p-value distribution of the all proteins",
                          xlim = c(0, 1))
 
 ## Save the plots
-dev.copy(png, "PValue_Distribution_variableType.png", width = 8, height = 6, units = "in", res = 300)
+dev.copy(png, "PValue_Distribution_variableType_Rep.png", width = 8, height = 6, units = "in", res = 300)
 dev.off()
 
-dev.copy(png, "PValue_Distribution_sensitivityType.png", width = 8, height = 6, units = "in", res = 300)
+dev.copy(png, "PValue_Distribution_sensitivityType_Rep.png", width = 8, height = 6, units = "in", res = 300)
 dev.off()
 
-dev.copy(png, "PValue_Distribution_interaction.png", width = 8, height = 6, units = "in", res = 300)
+dev.copy(png, "PValue_Distribution_interaction_Rep.png", width = 8, height = 6, units = "in", res = 300)
 dev.off()
 
-dev.copy(png, "PValue_Distribution_combined.png", width = 8, height = 6, units = "in", res = 300)
+dev.copy(png, "PValue_Distribution_combined_Rep.png", width = 8, height = 6, units = "in", res = 300)
 dev.off()
 
 # Remove the dummy frames
