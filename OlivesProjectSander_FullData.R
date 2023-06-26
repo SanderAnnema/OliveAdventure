@@ -467,6 +467,41 @@ Function_drawQQ = function (QQPlot_data, plot_type, title) {
   }
 }
 
+### Calculations for the visualization of the distribution of missing values
+Function_calcPercentDistr = function(data, index, title) {
+  # Create a subset of the dataset containing only the protein intensities after normalization with a protein per row
+  DummyFrame = Function_subset(data, index)
+  row.names(DummyFrame) = data$Accession
+  
+  # Calculate the percentage of missing values per protein
+  Data_PercentageZero_ANorm = data.frame(Percentage_Zero = rowMeans(DummyFrame == 0) * 100)
+  
+  # Create a new variable for the bins (0-10%, 10-20%, ..., 90-100%)
+  Data_PercentageZero_ANorm$Bin = cut(Data_PercentageZero_ANorm$Percentage_Zero, breaks = c(seq(0, 100, by = 10), Inf), right = FALSE, labels = FALSE)
+  
+  # Count the number of proteins in each bin
+  Data_PercentageZeroCounts = table(Data_PercentageZero_ANorm$Bin)
+  
+  # Convert the table to a data frame
+  Data_PercentageZeroCounts = as.data.frame(Data_PercentageZeroCounts)
+  names(Data_PercentageZeroCounts) = c("Bin", "Count")
+  Data_PercentageZeroCounts$Bin = as.numeric(Data_PercentageZeroCounts$Bin) -1
+  
+  # Generate the labels for the x-axis
+  bin_labels = paste0(Data_PercentageZeroCounts$Bin * 10, "%-", Data_PercentageZeroCounts$Bin * 10 + 10, "%")
+  
+  # Plot the histogram
+  Plot_Hist_PercentageZero_ANorm = ggplot(Data_PercentageZeroCounts, aes(x = reorder(bin_labels, -Count), y = Count)) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    xlab("Percentage Range") +
+    ylab("Number of Proteins") +
+    ggtitle(title) +
+    scale_x_discrete(labels = bin_labels) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  
+  return(Plot_Hist_PercentageZero_ANorm)
+}
+
 
 
 
@@ -553,38 +588,8 @@ ggsave("QQPlot_intensity_Full.png", plot = Plot_QQ_intensity, scale = 1, width =
 
 
 #### Histogram showing the degree of missing values ####
-# Create a subset of the dataset containing only the protein intensities after normalization with a protein per row
-DummyFrame = Function_subset(ProtTab_ANorm, IdxIntensCol)
-row.names(DummyFrame) = ProtTab_ANorm$Accession
-
-# Calculate the percentage of missing values per protein
-Data_PercentageZero_ANorm = data.frame(Percentage_Zero = rowMeans(DummyFrame == 0) * 100)
-
-# Remove the dummy frame
-rm(DummyFrame)
-
-# Create a new variable for the bins (0-10%, 10-20%, ..., 90-100%)
-Data_PercentageZero_ANorm$Bin = cut(Data_PercentageZero_ANorm$Percentage_Zero, breaks = c(seq(0, 100, by = 10), Inf), right = FALSE, labels = FALSE)
-
-# Count the number of proteins in each bin
-Data_PercentageZeroCounts = table(Data_PercentageZero_ANorm$Bin)
-
-# Convert the table to a data frame
-Data_PercentageZeroCounts = as.data.frame(Data_PercentageZeroCounts)
-names(Data_PercentageZeroCounts) = c("Bin", "Count")
-Data_PercentageZeroCounts$Bin = as.numeric(Data_PercentageZeroCounts$Bin) -1
-
-# Generate the labels for the x-axis
-bin_labels = paste0(Data_PercentageZeroCounts$Bin * 10, "%-", Data_PercentageZeroCounts$Bin * 10 + 10, "%")
-
-# Plot the histogram
-Plot_Hist_PercentageZero_ANorm = ggplot(Data_PercentageZeroCounts, aes(x = reorder(bin_labels, -Count), y = Count)) +
-  geom_bar(stat = "identity", fill = "skyblue") +
-  xlab("Percentage Range") +
-  ylab("Number of Proteins") +
-  ggtitle("Distribution of Missing Values per Protein") +
-  scale_x_discrete(labels = bin_labels) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+# Perform the calculations needed to draw the histogram
+Plot_Hist_PercentageZero_ANorm = Function_calcPercentDistr(ProtTab_ANorm, IdxIntensCol, "Distribution of Missing Values per Protein")
 
 # Print the plot
 print(Plot_Hist_PercentageZero_ANorm)
