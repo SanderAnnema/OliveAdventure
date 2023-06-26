@@ -600,8 +600,15 @@ ggsave("Distribution_MissingValues_PerProtein_ANorm.png", plot = Plot_Hist_Perce
 
 
 #### Histogram showing the percentages of zeros per protein before averageing and imputation ####
+# Create a subset of the dataset containing only the protein intensities after normalization with a protein per row
+DummyFrame = Function_subset(ProtTab_ANorm, IdxIntensCol)
+row.names(DummyFrame) = ProtTab_ANorm$Accession
+
 # Calculate the percentage of missing values per protein
-Data_PercentageZero_ANorm = data.frame(Percentage_Zero = rowMeans(Data_ANorm == 0) * 100)
+Data_PercentageZero_ANorm = data.frame(Percentage_Zero = rowMeans(DummyFrame == 0) * 100)
+
+# Remove the dummy frame
+rm(DummyFrame)
 
 # Create a new variable for the bins (0-10%, 10-20%, ..., 90-100%)
 Data_PercentageZero_ANorm$Bin = cut(Data_PercentageZero_ANorm$Percentage_Zero, breaks = c(seq(0, 90, by = 10), 100), right = FALSE, labels = FALSE)
