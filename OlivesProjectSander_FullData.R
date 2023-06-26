@@ -551,14 +551,20 @@ ggsave("QQPlot_intensity_Full.png", plot = Plot_QQ_intensity, scale = 1, width =
 
 
 
-#### !!!! WORKING ON THE STUFF BELOW HERE! !!!! ####
+
 #### Histogram showing the degree of missing values ####
-# Create a new data file containing the 
+# Create a subset of the dataset containing only the protein intensities after normalization with a protein per row
+DummyFrame = Function_subset(ProtTab_ANorm, IdxIntensCol)
+row.names(DummyFrame) = ProtTab_ANorm$Accession
+
 # Calculate the percentage of missing values per protein
-Data_PercentageZero_ANorm = data.frame(Percentage_Zero = rowMeans(Data_ANorm == 0) * 100)
+Data_PercentageZero_ANorm = data.frame(Percentage_Zero = rowMeans(DummyFrame == 0) * 100)
+
+# Remove the dummy frame
+rm(DummyFrame)
 
 # Create a new variable for the bins (0-10%, 10-20%, ..., 90-100%)
-Data_PercentageZero_ANorm$Bin = cut(Data_PercentageZero_ANorm$Percentage_Zero, breaks = c(seq(0, 90, by = 10), 100), right = FALSE, labels = FALSE)
+Data_PercentageZero_ANorm$Bin = cut(Data_PercentageZero_ANorm$Percentage_Zero, breaks = c(seq(0, 100, by = 10), Inf), right = FALSE, labels = FALSE)
 
 # Count the number of proteins in each bin
 Data_PercentageZeroCounts = table(Data_PercentageZero_ANorm$Bin)
@@ -569,7 +575,7 @@ names(Data_PercentageZeroCounts) = c("Bin", "Count")
 Data_PercentageZeroCounts$Bin = as.numeric(Data_PercentageZeroCounts$Bin) -1
 
 # Generate the labels for the x-axis
-bin_labels = paste0(Data_PercentageZeroCounts$Bin * 10, "%-", (Data_PercentageZeroCounts$Bin + 1) * 10 - 1, "%")
+bin_labels = paste0(Data_PercentageZeroCounts$Bin * 10, "%-", Data_PercentageZeroCounts$Bin * 10 + 10, "%")
 
 # Plot the histogram
 Plot_Hist_PercentageZero_ANorm = ggplot(Data_PercentageZeroCounts, aes(x = reorder(bin_labels, -Count), y = Count)) +
@@ -591,53 +597,6 @@ ggsave("Distribution_MissingValues_PerProtein_ANorm.png", plot = Plot_Hist_Perce
 
 #### !!! BEGINNING OF DATA PROCESSING METHOD 1: ONLY PROTEINS WITH FULL DATA !!! ####
 ## In this method, no imputation is performed. Any proteins that don't have full data will be removed.
-
-
-
-
-
-
-
-
-#### Histogram showing the percentages of zeros per protein before averageing and imputation ####
-# Create a subset of the dataset containing only the protein intensities after normalization with a protein per row
-DummyFrame = Function_subset(ProtTab_ANorm, IdxIntensCol)
-row.names(DummyFrame) = ProtTab_ANorm$Accession
-
-# Calculate the percentage of missing values per protein
-Data_PercentageZero_ANorm = data.frame(Percentage_Zero = rowMeans(DummyFrame == 0) * 100)
-
-# Remove the dummy frame
-rm(DummyFrame)
-
-# Create a new variable for the bins (0-10%, 10-20%, ..., 90-100%)
-Data_PercentageZero_ANorm$Bin = cut(Data_PercentageZero_ANorm$Percentage_Zero, breaks = c(seq(0, 90, by = 10), 100), right = FALSE, labels = FALSE)
-
-# Count the number of proteins in each bin
-Data_PercentageZeroCounts = table(Data_PercentageZero_ANorm$Bin)
-
-# Convert the table to a data frame
-Data_PercentageZeroCounts = as.data.frame(Data_PercentageZeroCounts)
-names(Data_PercentageZeroCounts) = c("Bin", "Count")
-Data_PercentageZeroCounts$Bin = as.numeric(Data_PercentageZeroCounts$Bin) -1
-
-# Generate the labels for the x-axis
-bin_labels = paste0(Data_PercentageZeroCounts$Bin * 10, "%-", (Data_PercentageZeroCounts$Bin + 1) * 10 - 1, "%")
-
-# Plot the histogram
-Plot_Hist_PercentageZero_ANorm = ggplot(Data_PercentageZeroCounts, aes(x = reorder(bin_labels, -Count), y = Count)) +
-  geom_bar(stat = "identity", fill = "skyblue") +
-  xlab("Percentage Range") +
-  ylab("Number of Proteins") +
-  ggtitle("Distribution of Missing Values per Protein") +
-  scale_x_discrete(labels = bin_labels) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
-
-# Print the plot
-print(Plot_Hist_PercentageZero_ANorm)
-
-# Save the histogram
-ggsave("Distribution_MissingValues_PerProtein_ANorm.png", plot = Plot_Hist_PercentageZero_ANorm, width = 10, height = 6, dpi = 300)
 
 
 
