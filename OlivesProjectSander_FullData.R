@@ -603,30 +603,59 @@ ggsave("Distribution_MissingValues_PerProtein_ANorm.png", plot = Plot_Hist_Perce
 #### !!! BEGINNING OF DATA PROCESSING METHOD 1: ONLY PROTEINS WITH FULL DATA !!! ####
 ## In this method, no imputation is performed. Any proteins that don't have full data will be removed.
 
+#### Remove proteins with missing data ####
+# Remove proteins with missing data
+ProtTab_NoZero = ProtTab_ANorm[rowSums(ProtTab_ANorm == 0) == 0, ]
+
+# Calculate the percentage of proteins removed
+Value_RetainedProt_NoZero = nrow(ProtTab_NoZero) / nrow(ProtTab_ANorm) * 100
+
+# Generate a data file for further processing
+Data_NoZero = Function_subset(ProtTab_NoZero, IdxIntensCol)
+Data_NoZero = Function_setAccession(Data_NoZero, ProtTab_NoZero)
 
 
 
-#### Averaging duplicates after normalization, but before imputation ####
-### The previous plots contain duplicates of the same samples, so here they will be averaged
-Data_AMean = Function_duplicateAverageing(Data_ANorm, ProtTab_ANorm$Accession)
+
+#### Averaging duplicates ####
+### Calculation of averages
+Data_NoZero_Mean = Function_duplicateAverageing(Data_NoZero, ProtTab_NoZero$Accession)
+
+### Boxplot of averaged data
+# Calculations
+Data_NoZero_Mean_Box = Function_takeLog2(Data_NoZero_Mean)
+Data_NoZero_Mean_Box = Function_makeLong(Data_NoZero_Mean_Box)
+Data_NoZero_Mean_Box = Function_add_colorColumn(Data_NoZero_Mean_Box)
+
+# Drawing and saving the boxplot
+Plot_Box_NoZero_Mean = Function_drawBoxplot(Data_NoZero_Mean_Box, title = "log2 intensity distribution after normalization and duplicate averageing of proteins with complete data")
+Function_savePlot(Plot_Box_NoZero_Mean, filename = "MeanIntens_Complete.png", plotType = "boxplot")
 
 
 
 
-#### Plot the averaged pre-imputation data in a boxplot ####
-## Set up the data, and transform however needed.
-Data_Box_AMean = Function_takeLog2(Data_AMean)
-Data_Box_AMean = Function_makeLong(Data_Box_AMean)
-Data_Box_AMean = subset(Data_Box_AMean, value !=0) 
+#### 2-way ANOVA of the NoZero dataset ####
+### Differential expression analysis with a 2-way ANOVA between controls and treated samples
+## Perform the 2-way ANOVA with p-value adjustment
+Output_ANOVA_NoZero = Function_performANOVA(Data_NoZero_Mean, p_value = 0.01)
 
-# Add a column containing information based on which the point color is defined
-Data_Box_AMean = Function_add_colorColumn(Data_Box_AMean)
 
-# Make the boxplot of the data after normalization and averageing
-Plot_Box_AMean = Function_drawBoxplot(Data_Box_AMean, title = "log2 intensity distribution after normalization and duplicate averageing")
 
-# Print and save the boxplot
-Function_savePlot(Plot_Box_AMean, filename = "averaged_data_Full.png", plotType = "boxplot")
+
+#### Heatmap generation ####
+## Perform the heatmap generation
+Plot_Heat_NoZero = Function_drawHeatmap(Data_NoZero_Mean, Output_ANOVA_NoZero)
+
+## Save the heatmap as a PNG
+ggsave("Heatmap_NoZero.png", plot = Plot_Heat_NoZero,
+       scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
+
+
+
+
+#### !!! BEGINNING OF DATA PROCESSING METHOD 2: Imputation when there's at least one value per triplicate !!! ####
+## In this method, if there's even only one value per triplicate, mean imputation will be performed on the missing values. 
+
 
 
 
