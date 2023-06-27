@@ -656,6 +656,8 @@ ggsave("Heatmap_NoZero.png", plot = Plot_Heat_NoZero,
 #### !!! BEGINNING OF DATA PROCESSING METHOD 2: Imputation when there's at least one value per triplicate !!! ####
 ## In this method, if there's even only one value per triplicate, mean imputation will be performed on the missing values. 
 
+### Data preparation
+#
 
 
 
