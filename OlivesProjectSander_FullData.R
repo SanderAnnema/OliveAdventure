@@ -191,12 +191,6 @@ Function_TripMeanImput = function(data, min_non_zero = 1) {
   num_non_zero = rowSums(data != 0)
   data[num_non_zero >= min_non_zero, ] = t(apply(data[num_non_zero >= min_non_zero, ], 1, Function_meanImput))
 
-  # Transpose row- and column names
-    data = t(data)
-    
-    # Revert to data frames
-    data = data.frame(data)
-    
     return(data)
 
 }
@@ -718,8 +712,11 @@ List_subsets = lapply(List_subsets, function(subset) {
   Function_TripMeanImput(subset, min_non_zero = 1)
 })
 
-# Reassemble the 6 separate data frames into one full data set
-Data_Imp1 = do.call(cbind, List_subsets)
+# Reassemble the 6 separate data frames into one full data set. This required some fiddling with the column names
+Data_Imp1 = do.call(cbind, lapply(names(List_subsets), function(name) {
+  colnames(List_subsets[[name]]) = sub(paste0("^", name, "."), "", colnames(List_subsets[[name]]))
+  List_subsets[[name]]
+}))
 
 # Remove the subset files
 rm(List_subsets)
