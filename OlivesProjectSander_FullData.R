@@ -500,8 +500,26 @@ Function_calcPercentDistr = function(data, index, title) {
   return(Plot_Hist_PercentageZero_ANorm)
 }
 
-
-
+### Extract accession numbers for proteins that newly appear under different treatment
+Function_ExtractAccessionUnique = function(subset_list) {
+  # Create an empty vector to store the accession numbers
+  Vector_accession_numbers = character()
+  
+  # Iterate over each subset in the list
+  for (subset in subset_list) {
+    # Iterate over each row in the subset
+    for (i in 1:nrow(subset)) {
+      row = subset[i, ]
+      # Define the condition to check if any value in the row is greater than 0 and none of the values are equal to or below 0 in the other subset
+      if (any(row > 0) && !all(row >= 0)) {
+        Vector_accession_numbers = c(Vector_accession_numbers, rownames(subset)[i])
+      }
+    }
+  }
+  
+  # Return the vector of accession numbers
+  return(Vector_accession_numbers)
+}
 
 #### !!! BEGINNING OF OVERALL DATA PROCESSING: NO DIFFERENCES BETWEEN THE 4 METHODS !!! ####
 ## The data needs to be prepared first, which includes visualization of the data
@@ -809,6 +827,7 @@ List_subsets = lapply(List_subsets, function(subset) {
   Function_TripMeanImput(subset, min_non_zero = 2)
   })
 
+# Make a 
 
 
 
