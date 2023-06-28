@@ -179,7 +179,7 @@ Function_IdentBarrenProt = function(data) {
 
 ### Mean imputation of a dataset, where each imputation is performed on one triplicate measurement. Those proteins where there's only one value will be removed.
 ## Note: This function only acts upon a subset, so you need to select the subsets yourself.
-Function_TripMeanImput = function(data) {
+Function_TripMeanImput = function(data, min_non_zero = 1) {
   # Define a sub-function for mean imputation over rows
   Function_meanImput = function(row) {
     row_mean = mean(row)
@@ -188,7 +188,8 @@ Function_TripMeanImput = function(data) {
   }
   
   # Apply the sub-function on the subset to impute the missing values
-  data = apply(data, 1, Function_meanImput)
+  num_non_zero = rowSums(data != 0)
+  data[num_non_zero >= min_non_zero, ] = t(apply(data[num_non_zero >= min_non_zero, ], 1, Function_meanImput))
 
   # Transpose row- and column names
     data = t(data)
@@ -702,32 +703,26 @@ Value_RetainedProt_Imp1 = nrow(Data_Imp1) / nrow(ProtTab_ANorm) * 100
 
 
 #### Mean imputation upon the remaining proteins ####
-# Make 6 subsets for individual triplicates
-subset_control_sensitive = subset(Data_Imp1, select = grepl("^Control_Sensitive", colnames(Data_Imp1)))
-subset_treated_sensitive = subset(Data_Imp1, select = grepl("^Treated_Sensitive", colnames(Data_Imp1)))
-subset_control_intermediair = subset(Data_Imp1, select = grepl("^Control_Intermediair", colnames(Data_Imp1)))
-subset_treated_intermediair = subset(Data_Imp1, select = grepl("^Treated_Intermediair", colnames(Data_Imp1)))
-subset_control_resistent = subset(Data_Imp1, select = grepl("^Control_Resistent", colnames(Data_Imp1)))
-subset_treated_resistent = subset(Data_Imp1, select = grepl("^Treated_Resistent", colnames(Data_Imp1)))
+# Separate the data file into the 6 factors, and put them in a list
+List_subsets = list(
+  subset_control_sensitive = subset(Data_Imp1, select = grepl("^Control_Sensitive", colnames(Data_Imp1))),
+  subset_treated_sensitive = subset(Data_Imp1, select = grepl("^Treated_Sensitive", colnames(Data_Imp1))),
+  subset_control_intermediair = subset(Data_Imp1, select = grepl("^Control_Intermediair", colnames(Data_Imp1))),
+  subset_treated_intermediair = subset(Data_Imp1, select = grepl("^Treated_Intermediair", colnames(Data_Imp1))),
+  subset_control_resistent = subset(Data_Imp1, select = grepl("^Control_Resistent", colnames(Data_Imp1))),
+  subset_treated_resistent = subset(Data_Imp1, select = grepl("^Treated_Resistent", colnames(Data_Imp1)))
+)
 
-# Perform mean imputation over the triplicates
-subset_control_sensitive = Function_TripMeanImput(subset_control_sensitive)
-subset_treated_sensitive = Function_TripMeanImput(subset_treated_sensitive)
-subset_control_intermediair = Function_TripMeanImput(subset_control_intermediair)
-subset_treated_intermediair = Function_TripMeanImput(subset_treated_intermediair)
-subset_control_resistent = Function_TripMeanImput(subset_control_resistent)
-subset_treated_resistent = Function_TripMeanImput(subset_treated_resistent)
+# On each of the subsets, perform mean imputation within factors with at least two non-zero values
+List_subsets = lapply(List_subsets, function(subset) {
+  Function_TripMeanImput(subset, min_non_zero = 1)
+})
 
 # Reassemble the 6 separate data frames into one full data set
-Data_Imp1 = as.data.frame(cbind(subset_control_sensitive, subset_treated_sensitive, subset_control_intermediair, subset_treated_intermediair, subset_control_resistent, subset_treated_resistent))
+Data_Imp1 = do.call(cbind, List_subsets)
 
 # Remove the subset files
-rm(subset_control_sensitive)
-rm(subset_treated_sensitive)
-rm(subset_control_intermediair)
-rm(subset_treated_intermediair)
-rm(subset_control_resistent)
-rm(subset_treated_resistent)
+rm(List_subsets)
 
 
 
@@ -801,6 +796,21 @@ ggsave("Heatmap_Imp1.png", plot = Plot_Heat_Imp1,
 ## In this method, we seek to include those datasets that show zero expression of a protein under one condition, but then express under another.
 ## This will require the retention of those conditions which have only zero values, but where other conditions of the same protein have at least 2 >0 values per triplicate.
 
+#### Imputation method 2: Where newly appearing proteins are not discarded
+# Separate the data file into the 6 factors, and put them in a list
+List_subsets = list(
+  subset_control_sensitive = subset(Data_ANorm, select = grepl("^Control_Sensitive", colnames(Data_ANorm))),
+  subset_treated_sensitive = subset(Data_ANorm, select = grepl("^Treated_Sensitive", colnames(Data_ANorm))),
+  subset_control_intermediair = subset(Data_ANorm, select = grepl("^Control_Intermediair", colnames(Data_ANorm))),
+  subset_treated_intermediair = subset(Data_ANorm, select = grepl("^Treated_Intermediair", colnames(Data_ANorm))),
+  subset_control_resistent = subset(Data_ANorm, select = grepl("^Control_Resistent", colnames(Data_ANorm))),
+  subset_treated_resistent = subset(Data_ANorm, select = grepl("^Treated_Resistent", colnames(Data_ANorm)))
+)
+
+# On each of the subsets, perform mean imputation within factors with at least two non-zero values
+List_subsets = lapply(List_subsets, function(subset) {
+  Function_TripMeanImput(subset, min_non_zero = 2)
+  })
 
 
 
