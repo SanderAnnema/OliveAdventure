@@ -1013,7 +1013,7 @@ rm(DummyFrame5)
 #### Protein ID conversion using UniProt ####
 ## Prepare data
 # Make a vector of protein IDs to be converted
-Vector_ProteinIDs_Acc_NoZero = rownames(Data_AMean_ImpNoZero)
+Vector_ProteinIDs_Acc_NoZero = rownames(Data_Imp1_Mean)
 
 # Extract only the relevant section of the accession number. So only the part after the second '|' symbol.
 Vector_ProteinIDs_Acc_NoZero = sub("^[^|]*\\|[^|]*\\|(.*)", "\\1", Vector_ProteinIDs_Acc_NoZero)
