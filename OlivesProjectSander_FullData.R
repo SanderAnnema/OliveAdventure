@@ -944,36 +944,6 @@ ggsave("Heatmap_Imp3.png", plot = Plot_Heat_Imp3,
 
 #### !!!!! The stuff below here is from the previous version, but will be rolled into the code above. !!!!! ####
 
-#### p-value normality analysis with Q-Q plots for the NoZero dataset where all proteins with even one remaining zero after imputation are removed ####
-## To determine how the p-values from the entire dataset are distributed, 4 Q-Q plots are made 
-## One for each factor, one for the interaction, and one for all the p-values.
-# Calculate the basic Q-Q plots
-Output_QQ_NoZero = Function_calcQQ_P(Output_ANOVA_NoZero$Data_ANOVA)
-
-## Draw the plots using ggplot2, then save them
-# Variable type
-Plot_QQ_P_variable_NoZero = Function_drawQQ(Output_QQ_NoZero$QQ_variable, plot_type = "p_values")
-print(Plot_QQ_P_variable_NoZero)
-ggsave("QQPlot_variable_NoZero.png", plot = Plot_QQ_P_variable_NoZero, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
-
-# Sensitivity type
-Plot_QQ_P_sensitivity_NoZero = Function_drawQQ(Output_QQ_NoZero$QQ_sensitivity, plot_type = "p_values")
-print(Plot_QQ_P_sensitivity_NoZero)
-ggsave("QQPlot_sensitivity_NoZero.png", plot = Plot_QQ_P_sensitivity_NoZero, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
-
-# Interaction
-Plot_QQ_P_interaction_NoZero = Function_drawQQ(Output_QQ_NoZero$QQ_interaction, plot_type = "p_values")
-print(Plot_QQ_P_interaction_NoZero)
-ggsave("QQPlot_interaction_NoZero.png", plot = Plot_QQ_P_interaction_NoZero, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
-
-# Combined factors
-Plot_QQ_P_combined_NoZero = Function_drawQQ(Output_QQ_NoZero$QQ_combined, plot_type = "p_values")
-print(Plot_QQ_P_combined_NoZero)
-ggsave("QQPlot_combined_NoZero.png", plot = Plot_QQ_P_combined_NoZero, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
-
-
-
-
 #### Histogram of the p-value distribution of all proteins of the NoZero dataset ####
 ## Data preparation
 # Subset the relevant data
@@ -1056,36 +1026,6 @@ Vector_ProteinIDs_NoZero = Data_AccMapping$To
 
 
 #### !!!! Using gProfiler for gene enrichment ####
-
-
-
-
-#### p-value normality analysis with Q-Q plots for the replacement dataset where all proteins with even one remaining zero after imputation are removed ####
-## To determine how the p-values from the entire dataset are distributed, 4 Q-Q plots are made 
-## One for each factor, one for the interaction, and one for all the p-values.
-# Calculate the basic Q-Q plots
-Output_QQ_Rep = Function_calcQQ_P(Output_ANOVA_Rep$Data_ANOVA)
-
-## Draw the plots using ggplot2, then save them
-# Variable type
-Plot_QQ_P_variable_Rep = Function_drawQQ(Output_QQ_Rep$QQ_variable, plot_type = "p_values")
-print(Plot_QQ_P_variable_Rep)
-ggsave("QQPlot_variable_Rep.png", plot = Plot_QQ_P_variable_Rep, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
-
-# Sensitivity type
-Plot_QQ_P_sensitivity_Rep = Function_drawQQ(Output_QQ_Rep$QQ_sensitivity, plot_type = "p_values")
-print(Plot_QQ_P_sensitivity_Rep)
-ggsave("QQPlot_sensitivity_Rep.png", plot = Plot_QQ_P_sensitivity_Rep, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
-
-# Interaction
-Plot_QQ_P_interaction_Rep = Function_drawQQ(Output_QQ_Rep$QQ_interaction, plot_type = "p_values")
-print(Plot_QQ_P_interaction_Rep)
-ggsave("QQPlot_interaction_Rep.png", plot = Plot_QQ_P_interaction_Rep, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
-
-# Combined factors
-Plot_QQ_P_combined_Rep = Function_drawQQ(Output_QQ_Rep$QQ_combined, plot_type = "p_values")
-print(Plot_QQ_P_combined_Rep)
-ggsave("QQPlot_combined_Rep.png", plot = Plot_QQ_P_combined_Rep, scale = 1, width = 8, height = 6, units = "in", dpi = 300)
 
 
 
