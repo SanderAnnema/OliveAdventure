@@ -325,7 +325,7 @@ Function_performANOVA = function(data, p_value) {
 }
   
 ### Heatmap generation
-Function_drawHeatmap = function(data, ANOVA_output, title = title) {
+Function_drawHeatmap = function(data, ANOVA_output, title = title, fontsize_rows = 2) {
   ## Data preparation
   # Create a new column for the accession numbers needed for the analysis
   data$Accession = rownames(data)
@@ -392,7 +392,8 @@ Function_drawHeatmap = function(data, ANOVA_output, title = title) {
   Plot_heatmap = pheatmap(Matrix_heatmap, 
                           clustering_distance_rows = "euclidean", 
                           clustering_distance_cols = "euclidean",
-                          main = title)
+                          main = title,
+                          fontsize_row = fontsize_rows)
   
   return(Plot_heatmap)
 }
@@ -463,6 +464,11 @@ Function_drawQQ = function (QQPlot_data, plot_type, title) {
     
     return(QQ_plot)
   }
+}
+
+### Check if a data frame has a certain number of non-zero values per row
+Function_CheckNonZero = function(data, threshold) {
+  apply(data, 1, function(row) sum(row != 0, na.rm = TRUE) >= threshold)
 }
 
 ### Calculations for the visualization of the distribution of missing values
@@ -664,7 +670,7 @@ Output_ANOVA_NoZero = Function_performANOVA(Data_NoZero_Mean, p_value = 0.01)
 
 #### Heatmap generation ####
 ## Perform the heatmap generation
-Plot_Heat_NoZero = Function_drawHeatmap(Data_NoZero_Mean, Output_ANOVA_NoZero, title = "Heatmap depicting z-values of proteins with complete data")
+Plot_Heat_NoZero = Function_drawHeatmap(Data_NoZero_Mean, Output_ANOVA_NoZero, title = "Heatmap depicting z-values of proteins with complete data", fontsize_rows = 5)
 
 ## Save the heatmap as a PNG
 ggsave("Heatmap_NoZero.png", plot = Plot_Heat_NoZero,
@@ -725,7 +731,7 @@ List_subsets = list(
   subset_treated_resistent = subset(Data_Imp1, select = grepl("^Treated_Resistent", colnames(Data_Imp1)))
 )
 
-# On each of the subsets, perform mean imputation within factors with at least two non-zero values
+# On each of the subsets, perform mean imputation within factors with at least x non-zero values
 List_subsets = lapply(List_subsets, function(subset) {
   Function_TripMeanImput(subset, min_non_zero = 1)
 })
@@ -798,7 +804,7 @@ Output_ANOVA_Imp1 = Function_performANOVA(Data_Imp1_Mean, p_value = 0.01)
 
 #### Heatmap generation ####
 ## Perform the heatmap generation
-Plot_Heat_Imp1 = Function_drawHeatmap(Data_Imp1_Mean, Output_ANOVA_Imp1, title = "Heatmap depicting z-values of proteins with imputed data (method 1)")
+Plot_Heat_Imp1 = Function_drawHeatmap(Data_Imp1_Mean, Output_ANOVA_Imp1, title = "Heatmap depicting z-values of proteins with imputed data (method 1)", fontsize_rows = 5)
 
 ## Save the heatmap as a PNG
 ggsave("Heatmap_Imp1.png", plot = Plot_Heat_Imp1,
@@ -809,11 +815,11 @@ ggsave("Heatmap_Imp1.png", plot = Plot_Heat_Imp1,
 
 #### !!! BEGINNING OF DATA PROCESSING METHOD 3: Imputation method 2, where even if some conditions are missing, smooth histogram imputation is performed !!! ####
 ## In this method, we seek to include those datasets that show zero expression of a protein under one condition, but then express under another.
-## This will require the retention of those conditions which have only zero values, but where other conditions of the same protein have at least 2 >0 values per triplicate.
+## This will require the retention of those conditions which have only zero values, but where other conditions of the same protein have at least x >0 values per triplicate.
 
-#### Imputation method 2: Where newly appearing proteins are not discarded
+#### Data filtering
 # Separate the data file into the 6 factors, and put them in a list
-List_subsets = list(
+List_subsets_imp2 = list(
   subset_control_sensitive = subset(Data_ANorm, select = grepl("^Control_Sensitive", colnames(Data_ANorm))),
   subset_treated_sensitive = subset(Data_ANorm, select = grepl("^Treated_Sensitive", colnames(Data_ANorm))),
   subset_control_intermediair = subset(Data_ANorm, select = grepl("^Control_Intermediair", colnames(Data_ANorm))),
@@ -822,12 +828,150 @@ List_subsets = list(
   subset_treated_resistent = subset(Data_ANorm, select = grepl("^Treated_Resistent", colnames(Data_ANorm)))
 )
 
-# On each of the subsets, perform mean imputation within factors with at least two non-zero values
-List_subsets = lapply(List_subsets, function(subset) {
-  Function_TripMeanImput(subset, min_non_zero = 2)
-  })
+# Check per row in each subset whether there is a certain number of non-zero values or more, or not
+List_subsetNonZero_imp2 = lapply(List_subsets_imp2, function(subset) Function_CheckNonZero(subset, 2))
 
-# Make a 
+# Reassemble the list of vectors into a single data frame
+Data_subsetNonZero_imp2 = as.data.frame(do.call(cbind, List_subsetNonZero_imp2))
+
+# Remove those proteins (rows) where there isn't at least one TRUE
+# Note: Doesn't seem like any proteins need to be removed if a threshold is 1, but I'll keep the code here in case there's changes to the threshold.
+Data_subsetNonZero_imp2 = Data_subsetNonZero_imp2[rowSums(Data_subsetNonZero_imp2 == TRUE) > 0, ]
+
+# Extract the accession numbers of the remaining proteins, and use it to subset those proteins from the List_subsets_imp2
+List_subsetsFiltered_imp2 = list()
+for (subset_name in names(List_subsets_imp2)) {
+  subset = List_subsets_imp2[[subset_name]]
+  subset_filtered = subset[rownames(Data_subsetNonZero_imp2), , drop = FALSE]
+  List_subsetsFiltered_imp2[[subset_name]] = subset_filtered
+}
+
+
+
+
+#### Perform mean imputation on the subsets of the remaining proteins, as all of them have at least as many non-zero values as set in the threshold
+List_subsetsFiltered_imp2 = lapply(List_subsetsFiltered_imp2, function(subset) {
+  Function_TripMeanImput(subset, min_non_zero = 1)
+})
+
+# Also generate a data file of the filtered data
+Data_Imp2 = do.call(cbind, lapply(names(List_subsetsFiltered_imp2), function(name) {
+  colnames(List_subsetsFiltered_imp2[[name]]) = sub(paste0("^", name, "."), "", colnames(List_subsetsFiltered_imp2[[name]]))
+  List_subsetsFiltered_imp2[[name]]
+}))
+
+
+
+
+#### Replacement imputation using a smooth histogram and fitted Gaussian distributiom
+# Since there are now subsets (factors) remaining where there are no non-zero values, and calculating the z-values requires standard deviations, we need to impute the remaining zeros as well.
+## Generate the smooth histogram
+# Prepare the data
+DummyFrame = Function_makeLong(Data_Imp2)
+DummyFrame$value = log10(DummyFrame$value)
+DummyFrame = as.data.frame(DummyFrame)
+
+# Since there are many missing values in the dataset, we need to remove these first.
+DummyFrame$value[is.infinite(DummyFrame$value)] = 0
+DummyFrame = DummyFrame[DummyFrame$value != 0, ]
+
+# Generate a smooth histogram of the data
+Plot_SmoothHist_Imp2 = ggplot(DummyFrame, aes(x = value)) +
+  geom_density(fill = "skyblue", color = "black", alpha = 0.5, bw = 0.15) +
+  labs(x = "log10(intensity)", y = "Density", title = "Smooth Histogram of log10(intensity) for imputation with method 2")
+
+# Print and save the histogram
+print(Plot_SmoothHist_Imp2)
+ggsave("SmoothHist_Imp2.png", plot = Plot_SmoothHist_Imp2,
+       scale = 1, width = 25, height = 20, units = "cm", dpi = 300)
+
+## Fit a Gaussian distribution to the data
+# Generate the fit, mean, and standard deviation of the Gaussian distribution
+Data_Gaussian_Fit_Imp2 = fitdistr(DummyFrame$value, "normal")
+Value_Gaussian_Mu_Imp2 = Data_Gaussian_Fit_Imp2$estimate[1]
+Value_Gaussian_Sigma_Imp2 = Data_Gaussian_Fit_Imp2$estimate[2]
+
+# Calculate minus 3 sigma value, which is the log10 intensity point that will be used to replace missing values.
+Value_Gaussian_min3Sig_Imp2 = Value_Gaussian_Mu_Imp2 - 3 * Value_Gaussian_Sigma_Imp2
+
+# Convert the log10 intensity back to regular intensity
+Value_Rep_min_Imp2 = 10^(Value_Gaussian_min3Sig_Imp2)
+
+## Replace all zeros in the dataset with the found lowest value
+Data_Imp2[Data_Imp2 == 0] = Value_Rep_min_Imp2
+
+# Remove excessive files
+rm(DummyFrame)
+
+
+
+
+#### Visualisation of mean imputed data with method 2 ####
+### Histogram to show log2(intensity) distribution after normalization and replacement imputation
+# Data preparation
+Data_Imp2_Hist = Function_takeLog2(Data_Imp2)
+Data_Imp2_Hist = Function_makeLong(Data_Imp2_Hist)
+
+# Draw the histogram
+Plot_Hist_Imp2 = Function_drawHistogram(Data_Imp2_Hist$value, title = "log2(Intensity) distribution after smooth histogram imputation with method 2")
+
+# Save the histogram
+Function_savePlot(Plot_Hist_Imp2, filename = "IntensDistrib_Hist_Imp2.png", plotType = "histogram")
+
+### Boxplot of the post Imp2 data
+# Data preparation
+Data_Imp2_Box = Function_takeLog2(Data_Imp2)
+Data_Imp2_Box = Function_makeLong(Data_Imp2_Box)
+Data_Imp2_Box = Function_add_colorColumn(Data_Imp2_Box)
+
+# Draw the boxplot
+Plot_Box_Imp2 = Function_drawBoxplot(Data_Imp2_Box, title = "log2(intensity) distribution after smooth histogram imputation with method 2")
+
+# Save the boxplot
+Function_savePlot(Plot_Box_Imp2, "IntensDistrib_Box_Imp2.png", plotType = "boxplot")
+
+
+
+
+#### Duplicate averaging after imputation ####
+# Perform the calculation
+Data_Imp2_Mean = Function_duplicateAverageing(Data_Imp2, rownames(Data_Imp2))
+
+
+
+
+#### Visualization of averaged data ####
+### Boxplot visualization
+# Data preparation 
+Data_Imp2_Mean_Box = Function_takeLog2(Data_Imp2_Mean)
+Data_Imp2_Mean_Box = Function_makeLong(Data_Imp2_Mean_Box)
+Data_Imp2_Mean_Box = Function_add_colorColumn(Data_Imp2_Mean_Box)
+
+# Draw the boxplot
+Plot_Box_Imp2_Mean = Function_drawBoxplot(Data_Imp2_Mean_Box, title = "log2(intensity) distribution of proteins after smooth histogram imputation (method 2) and duplicate averaging")
+
+## Print the plot and save it as a PNG
+Function_savePlot(Plot_Box_Imp2_Mean, "IntensDistrib_Box_Imp2_Mean.png", plotType = "boxplot")
+
+
+
+
+#### 2-way ANOVA of the Imp2 dataset ####
+### Differential expression analysis with a 2-way ANOVA between controls and treated samples
+## Perform the 2-way ANOVA with p-value adjustment
+Output_ANOVA_Imp2 = Function_performANOVA(Data_Imp2_Mean, p_value = 0.01)
+
+
+
+
+#### Heatmap generation ####
+## Perform the heatmap generation
+Plot_Heat_Imp2 = Function_drawHeatmap(Data_Imp2_Mean, Output_ANOVA_Imp2, title = "Heatmap depicting z-values of proteins with imputed data (method 2)", fontsize_rows = 2)
+
+## Save the heatmap as a PNG
+ggsave("Heatmap_Imp2.png", plot = Plot_Heat_Imp2,
+       scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
+
 
 
 
@@ -933,7 +1077,7 @@ Output_ANOVA_Imp3 = Function_performANOVA(Data_Imp3_Mean, p_value = 0.01)
 
 #### Heatmap generation ####
 ## Perform the heatmap generation
-Plot_Heat_Imp3 = Function_drawHeatmap(Data_Imp3_Mean, Output_ANOVA_Imp3, title = "Heatmap depicting z-values of proteins with imputed data (method 3)")
+Plot_Heat_Imp3 = Function_drawHeatmap(Data_Imp3_Mean, Output_ANOVA_Imp3, title = "Heatmap depicting z-values of proteins with imputed data (method 3)", fontsize_rows = 2)
 
 ## Save the heatmap as a PNG
 ggsave("Heatmap_Imp3.png", plot = Plot_Heat_Imp3,
