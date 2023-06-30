@@ -1110,7 +1110,7 @@ Vector_ProteinIDs_Acc_Imp3 = sub("^[^|]*\\|[^|]*\\|(.*)", "\\1", Vector_ProteinI
 Data_AccMapping_Imp3 = mapUniProt(from = "UniProtKB_AC-ID", to = 'EMBL-GenBank-DDBJ', query = Vector_ProteinIDs_Acc_Imp3)
 
 # Since there were multiple gene IDs found per accession number, the data needs to be trimmed. I will take only the first gene ID found per accession number
-Data_AccMapping_Imp3_unique <- Data_AccMapping_Imp3 %>%
+Data_AccMapping_Imp3_unique = Data_AccMapping_Imp3 %>%
   group_by(From) %>%
   slice(1)
 
@@ -1121,12 +1121,69 @@ Vector_ProteinIDs_Imp3 = Data_AccMapping_Imp3_unique$To
 
 
 #### Recovering unmapped proteins with pBLAST ####
-# Some accession numbers couldn't be converted, so the unmapped accession numbers will be extracted, and pBLAST will be used to find similar proteins form Lactobacillus
-# Take the mapped protein vector, convert it back to accession numbers, and make a new vector containing all the accession numbers that are missing
-Vector_ConvAcc_Imp3 = mapUniProt(from = 'EMBL-GenBank-DDBJ', to = 'UniProtKB_AC-ID', query = Vector_ProteinIDs_Imp3)
-Vector_ConvAcc_Imp3 = Vector_ConvAcc_Imp3$To
+## Some accession numbers couldn't be converted, so the unmapped accession numbers will be extracted, and pBLAST will be used to find similar proteins form Lactobacillus
+## Take the mapped protein vector, convert it back to accession numbers, and make a new vector containing all the accession numbers that are missing
 
-Vector_UnmappedAcc_Imp3 = Vector_ProteinIDs_Acc_Imp3[!Vector_ProteinIDs_Acc_Imp3 %in% Vector_ProteinIDs_Imp3]
+### Prepare the data
+## Extract the accession numbers that couldn't be mapped
+Vector_UnmappedAcc_Imp3 = setdiff(Vector_ProteinIDs_Acc_Imp3, 
+                                  unique(Data_AccMapping_Imp3$From))
+
+## Prepare the protein sequence data
+# Read the FASTA file
+Data_proteinFASTA = readLines("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New/data/Protein_Sequences.fasta")
+
+# Initialize empty vectors to store the organized data
+Temp_AccNumb = vector()
+Temp_Seq = vector()
+
+# Process each line of the FASTA file
+for (i in 1:length(Data_proteinFASTA)) {
+  line = Data_proteinFASTA[i]
+  
+  # Check if the line starts with '>'
+  if (startsWith(line, ">")) {
+    # Extract the accession number
+    accession_number = line
+    
+    # Modify the accession number format
+    accession_number = gsub("^>(.*?)\\s.*", "tr|\\1", accession_number)
+    
+    # Initialize an empty string to store the protein sequence
+    sequence = ""
+    
+    # Process the following lines until the next '>' line or the end of the file
+    for (j in (i+1):length(Data_proteinFASTA)) {
+      next_line = Data_proteinFASTA[j]
+      
+      # Check if the next line starts with '>'
+      if (startsWith(next_line, ">")) {
+        break  # Exit the loop if the next entry is encountered
+      }
+      
+      # Concatenate the lines to form the protein sequence
+      sequence = paste0(sequence, next_line)
+    }
+    
+    # Append the data to the vectors
+    Temp_AccNumb = c(Temp_AccNumb, accession_number)
+    Temp_Seq = c(Temp_Seq, sequence)
+  }
+}
+
+# Assemble the 2 separate data files into one data frame
+Data_proteinFASTA = data.frame(Accession = Temp_AccNumb,
+                               Protein_Sequence = Temp_Seq,
+                               stringsAsFactors = FALSE)
+
+# Modify the accession numbers to only retain relevant information !!! NOT WORKING PROPERLY YET !!!
+Data_proteinFASTA$Accession = gsub("^[^|]*\\|[^|]*\\|(.*)", "\\1", Data_proteinFASTA$Accession)
+
+# Remove the temporary files
+rm(Temp_AccNumb)
+rm(Temp_Seq)
+
+
 
 
 #### !!!! Using gProfiler for gene enrichment ####
