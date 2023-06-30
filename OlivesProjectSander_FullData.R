@@ -629,9 +629,6 @@ ggsave("Distribution_MissingValues_PerProtein_ANorm.png", plot = Plot_Hist_Perce
 # Remove proteins with missing data
 ProtTab_NoZero = ProtTab_ANorm[rowSums(ProtTab_ANorm == 0) == 0, ]
 
-# Calculate the percentage of proteins removed
-Value_RetainedProt_NoZero = nrow(ProtTab_NoZero) / nrow(ProtTab_ANorm) * 100
-
 # Generate a data file for further processing
 Data_NoZero = Function_subset(ProtTab_NoZero, IdxIntensCol)
 Data_NoZero = Function_setAccession(Data_NoZero, ProtTab_NoZero)
@@ -1086,8 +1083,58 @@ ggsave("Heatmap_Imp3.png", plot = Plot_Heat_Imp3,
 
 
 
-#### !!!!! The stuff below here is from the previous version, but will be rolled into the code above. !!!!! ####
+#### Analysis of the differences between the 4 filtering methods ####
+# Generate a table containing the percentages of retained proteins per processing method
+Table_ProtRetent = data.frame(Method = c("NoZero", "Imp1", "Imp2", "Imp3"), 
+                              Percentage_retained = c(nrow(ProtTab_NoZero) / nrow(ProtTab_ANorm) * 100, 
+                                             nrow(Data_Imp1) / nrow(ProtTab_ANorm) * 100, 
+                                             nrow(Data_Imp2) / nrow(ProtTab_ANorm) * 100, 
+                                             nrow(Data_Imp3) / nrow(ProtTab_ANorm) * 100))
 
+
+
+
+#### !!!! BEGINNING OF GENE ENRICHMENT ANALYSIS !!!! ####
+# The proteins found in whatever data processing method is used above will be analysed using gProfiler, which requires extraction of the accession numbers of the remaining proteins, and conversion into gene IDs.
+
+#### Accession number extraction and gene ID conversion using UniProt
+## Prepare data
+# Make a vector of protein IDs to be converted
+Vector_ProteinIDs_Acc_Imp3 = rownames(Data_Imp3_Mean)
+
+# Extract only the relevant section of the accession number. So only the part after the second '|' symbol.
+Vector_ProteinIDs_Acc_Imp3 = sub("^[^|]*\\|[^|]*\\|(.*)", "\\1", Vector_ProteinIDs_Acc_Imp3)
+
+## Convert the accession numbers to ensembl gene IDs
+# Perform the conversion
+Data_AccMapping_Imp3 = mapUniProt(from = "UniProtKB_AC-ID", to = 'EMBL-GenBank-DDBJ', query = Vector_ProteinIDs_Acc_Imp3)
+
+# Since there were multiple gene IDs found per accession number, the data needs to be trimmed. I will take only the first gene ID found per accession number
+Data_AccMapping_Imp3_unique <- Data_AccMapping_Imp3 %>%
+  group_by(From) %>%
+  slice(1)
+
+# Extract the protein IDs as a vector
+Vector_ProteinIDs_Imp3 = Data_AccMapping_Imp3_unique$To
+
+
+
+
+#### Recovering unmapped proteins with pBLAST ####
+# Some accession numbers couldn't be converted, so the unmapped accession numbers will be extracted, and pBLAST will be used to find similar proteins form Lactobacillus
+# Take the mapped protein vector, convert it back to accession numbers, and make a new vector containing all the accession numbers that are missing
+Vector_ConvAcc_Imp3 = mapUniProt(from = 'GeneID', to = 'UniProtKB_AC-ID', query = Vector_ProteinIDs_Imp3)
+Vector_ConvAcc_Imp3 = Vector_ConvAcc_Imp3$To
+
+Vector_UnmappedAcc_Imp3 = Vector_ProteinIDs_Acc_Imp3[!Vector_ProteinIDs_Acc_Imp3 %in% Vector_ProteinIDs_Imp3]
+
+
+#### !!!! Using gProfiler for gene enrichment ####
+
+
+
+
+#### !!!!! EXCESS CODE: Q-Q PLOTS !!!!! ####
 #### Histogram of the p-value distribution of all proteins of the NoZero dataset ####
 ## Data preparation
 # Subset the relevant data
@@ -1150,26 +1197,6 @@ rm(DummyFrame2)
 rm(DummyFrame3)
 rm(DummyFrame4)
 rm(DummyFrame5)
-
-
-
-
-#### Protein ID conversion using UniProt ####
-## Prepare data
-# Make a vector of protein IDs to be converted
-Vector_ProteinIDs_Acc_NoZero = rownames(Data_Imp1_Mean)
-
-# Extract only the relevant section of the accession number. So only the part after the second '|' symbol.
-Vector_ProteinIDs_Acc_NoZero = sub("^[^|]*\\|[^|]*\\|(.*)", "\\1", Vector_ProteinIDs_Acc_NoZero)
-
-## Convert the accession numbers to ensembl gene IDs
-Data_AccMapping = mapUniProt(from = "UniProtKB_AC-ID", to = 'GeneID', query = Vector_ProteinIDs_Acc_NoZero)
-Vector_ProteinIDs_NoZero = Data_AccMapping$To
-
-
-
-
-#### !!!! Using gProfiler for gene enrichment ####
 
 
 
