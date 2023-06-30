@@ -1123,7 +1123,7 @@ Vector_ProteinIDs_Imp3 = Data_AccMapping_Imp3_unique$To
 #### Recovering unmapped proteins with pBLAST ####
 # Some accession numbers couldn't be converted, so the unmapped accession numbers will be extracted, and pBLAST will be used to find similar proteins form Lactobacillus
 # Take the mapped protein vector, convert it back to accession numbers, and make a new vector containing all the accession numbers that are missing
-Vector_ConvAcc_Imp3 = mapUniProt(from = 'GeneID', to = 'UniProtKB_AC-ID', query = Vector_ProteinIDs_Imp3)
+Vector_ConvAcc_Imp3 = mapUniProt(from = 'EMBL-GenBank-DDBJ', to = 'UniProtKB_AC-ID', query = Vector_ProteinIDs_Imp3)
 Vector_ConvAcc_Imp3 = Vector_ConvAcc_Imp3$To
 
 Vector_UnmappedAcc_Imp3 = Vector_ProteinIDs_Acc_Imp3[!Vector_ProteinIDs_Acc_Imp3 %in% Vector_ProteinIDs_Imp3]
