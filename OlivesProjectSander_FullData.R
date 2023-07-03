@@ -26,6 +26,9 @@ library(UniProt.ws)
 library(MASS)
 library(gProfileR)
 library(gprofiler2)
+library(devtools)
+library(taxonomizr)
+library(rBLAST)
 
 # Setting the working directory
 setwd("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New")
@@ -1147,7 +1150,7 @@ for (i in 1:length(Data_proteinFASTA)) {
     accession_number = line
     
     # Modify the accession number format
-    accession_number = gsub("^>(.*?)\\s.*", "tr|\\1", accession_number)
+    accession_number = gsub("^>.*?\\|(.*?)\\s.*", "\\1", accession_number)
     
     # Initialize an empty string to store the protein sequence
     sequence = ""
@@ -1176,15 +1179,40 @@ Data_proteinFASTA = data.frame(Accession = Temp_AccNumb,
                                Protein_Sequence = Temp_Seq,
                                stringsAsFactors = FALSE)
 
-# Modify the accession numbers to only retain relevant information !!! NOT WORKING PROPERLY YET !!!
-Data_proteinFASTA$Accession = gsub("^[^|]*\\|[^|]*\\|(.*)", "\\1", Data_proteinFASTA$Accession)
-
 # Remove the temporary files
 rm(Temp_AccNumb)
 rm(Temp_Seq)
 
+# Subset the FASTA file to extract only the protein sequences of proteins found in the vector of unmapped proteins
+Data_proteinFASTA_unmapped = Data_proteinFASTA[Data_proteinFASTA$Accession %in% Vector_UnmappedAcc_Imp3, ]
 
+### Protein BLAST on the unmapped proteins !!!! NOT WORKING! !!!!
+# Set up empty vectors to store the pBLAST results
+Vector_Original_Accession = vector()
+Vector_BLAST_Accession = vector()
+Vector_Query_Coverage = vector()
+Vector_Identity = vector()
 
+# Perform one pBLAST for each row of the data frame of unmapped proteins
+for (i in 1:nrow(Data_proteinFASTA_unmapped)) {
+  # Extract the protein sequence and accession number
+  sequence <- Data_proteinFASTA_unmapped$Protein_Sequence[i]
+  accession <- Data_proteinFASTA_unmapped$Accession[i]
+  
+  # Perform protein BLAST
+  blast_result <- rpsblast(query = sequence, database = "swissprot", program = "blastp", expect = 1e-10, num_descriptions = 1, num_alignments = 1)
+  
+  # Extract the information for the top hit
+  top_hit <- rbind(blast_result$hits)$accession[1]
+  query_coverage <- blast_result$query_coverage[1]
+  identity <- blast_result$identity[1]
+  
+  # Append the information to the vectors
+  Vector_Original_Accession <- c(Vector_Original_Accession, accession)
+  Vector_BLAST_Accession <- c(Vector_BLAST_Accession, top_hit)
+  Vector_Query_Coverage <- c(Vector_Query_Coverage, query_coverage)
+  Vector_Identity <- c(Vector_Identity, identity)
+}
 
 #### !!!! Using gProfiler for gene enrichment ####
 
