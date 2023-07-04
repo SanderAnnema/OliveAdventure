@@ -29,6 +29,7 @@ library(gprofiler2)
 library(devtools)
 library(taxonomizr)
 library(rBLAST)
+library(clusterProfiler)
 
 # Setting the working directory
 setwd("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New")
@@ -1108,17 +1109,21 @@ Vector_ProteinIDs_Acc_Imp3 = rownames(Data_Imp3_Mean)
 # Extract only the relevant section of the accession number. So only the part after the second '|' symbol.
 Vector_ProteinIDs_Acc_Imp3 = sub("^[^|]*\\|[^|]*\\|(.*)", "\\1", Vector_ProteinIDs_Acc_Imp3)
 
-## Convert the accession numbers to ensembl gene IDs
+## Convert the accession numbers to entrez- and EMBL gene IDs
 # Perform the conversion
-Data_AccMapping_Imp3 = mapUniProt(from = "UniProtKB_AC-ID", to = 'EMBL-GenBank-DDBJ', query = Vector_ProteinIDs_Acc_Imp3)
+Data_AccMapping_Imp3_EMBL = mapUniProt(from = "UniProtKB_AC-ID", to = 'EMBL-GenBank-DDBJ', query = Vector_ProteinIDs_Acc_Imp3)
+Data_AccMapping_Imp3_Entrez = mapUniProt(from = "UniProtKB_AC-ID", to = 'GeneID', query = Vector_ProteinIDs_Acc_Imp3)
+
 
 # Since there were multiple gene IDs found per accession number, the data needs to be trimmed. I will take only the first gene ID found per accession number
-Data_AccMapping_Imp3_unique = Data_AccMapping_Imp3 %>%
+Data_AccMapping_Imp3_EMBL_unique = Data_AccMapping_Imp3_EMBL %>%
   group_by(From) %>%
-  slice(1)
+  filter(row_number() == 1) %>%
+  ungroup()
 
 # Extract the protein IDs as a vector
-Vector_ProteinIDs_Imp3 = Data_AccMapping_Imp3_unique$To
+Vector_ProteinIDs_Imp3_EMBL = Data_AccMapping_Imp3_EMBL_unique$To
+Vector_ProteinIDs_Imp3_Entrez = Data_AccMapping_Imp3_Entrez$To
 
 
 
@@ -1129,8 +1134,11 @@ Vector_ProteinIDs_Imp3 = Data_AccMapping_Imp3_unique$To
 
 ### Prepare the data
 ## Extract the accession numbers that couldn't be mapped
-Vector_UnmappedAcc_Imp3 = setdiff(Vector_ProteinIDs_Acc_Imp3, 
-                                  unique(Data_AccMapping_Imp3$From))
+Vector_UnmappedAcc_Imp3_EMBL = setdiff(Vector_ProteinIDs_Acc_Imp3, 
+                                  unique(Data_AccMapping_Imp3_EMBL$From))
+
+Vector_UnmappedAcc_Imp3_Entrez = setdiff(Vector_ProteinIDs_Acc_Imp3, 
+                                       unique(Data_AccMapping_Imp3_Entrez$From))
 
 ## Prepare the protein sequence data
 # Read the FASTA file
@@ -1184,7 +1192,8 @@ rm(Temp_AccNumb)
 rm(Temp_Seq)
 
 # Subset the FASTA file to extract only the protein sequences of proteins found in the vector of unmapped proteins
-Data_proteinFASTA_unmapped = Data_proteinFASTA[Data_proteinFASTA$Accession %in% Vector_UnmappedAcc_Imp3, ]
+Data_proteinFASTA_unmapped_EMBL = Data_proteinFASTA[Data_proteinFASTA$Accession %in% Vector_UnmappedAcc_Imp3_EMBL, ]
+Data_proteinFASTA_unmapped_Entrez = Data_proteinFASTA[Data_proteinFASTA$Accession %in% Vector_UnmappedAcc_Imp3_Entrez, ]
 
 ### Protein BLAST on the unmapped proteins !!!! NOT WORKING! !!!!
 # Set up empty vectors to store the pBLAST results
@@ -1196,25 +1205,32 @@ Vector_Identity = vector()
 # Perform one pBLAST for each row of the data frame of unmapped proteins
 for (i in 1:nrow(Data_proteinFASTA_unmapped)) {
   # Extract the protein sequence and accession number
-  sequence <- Data_proteinFASTA_unmapped$Protein_Sequence[i]
-  accession <- Data_proteinFASTA_unmapped$Accession[i]
+  sequence = Data_proteinFASTA_unmapped$Protein_Sequence[i]
+  accession = Data_proteinFASTA_unmapped$Accession[i]
   
   # Perform protein BLAST
-  blast_result <- rpsblast(query = sequence, database = "swissprot", program = "blastp", expect = 1e-10, num_descriptions = 1, num_alignments = 1)
+  blast_result = rpsblast(query = sequence, database = "swissprot", program = "blastp", expect = 1e-10, num_descriptions = 1, num_alignments = 1)
   
   # Extract the information for the top hit
-  top_hit <- rbind(blast_result$hits)$accession[1]
-  query_coverage <- blast_result$query_coverage[1]
-  identity <- blast_result$identity[1]
+  top_hit = rbind(blast_result$hits)$accession[1]
+  query_coverage = blast_result$query_coverage[1]
+  identity = blast_result$identity[1]
   
   # Append the information to the vectors
-  Vector_Original_Accession <- c(Vector_Original_Accession, accession)
-  Vector_BLAST_Accession <- c(Vector_BLAST_Accession, top_hit)
-  Vector_Query_Coverage <- c(Vector_Query_Coverage, query_coverage)
-  Vector_Identity <- c(Vector_Identity, identity)
+  Vector_Original_Accession = c(Vector_Original_Accession, accession)
+  Vector_BLAST_Accession = c(Vector_BLAST_Accession, top_hit)
+  Vector_Query_Coverage = c(Vector_Query_Coverage, query_coverage)
+  Vector_Identity = c(Vector_Identity, identity)
 }
 
-#### !!!! Using gProfiler for gene enrichment ####
+#### Using gProfiler for gene enrichment ####
+# Note: Requires entrez gene IDs as an input
+
+# Make a vector out of the entrez gene IDs
+Vector_GeneID_Entrez = Data_AccMapping_Imp3_Entrez$To
+
+# Perform the KEGG gene enrichment
+Output_KEGGenrich = enrichKEGG(gene = Vector_GeneID_Entrez, organism = "lpg", keyType = "kegg", pvalueCutoff = 0.05, pAdjustMethod = "BH", universe = NULL, minGSSize = 10, maxGSSize = 500, qvalueCutoff = 0.2, use_internal_data = FALSE)
 
 
 
