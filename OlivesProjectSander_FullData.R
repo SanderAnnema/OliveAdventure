@@ -1142,15 +1142,15 @@ Vector_UnmappedAcc_Imp3_Entrez = setdiff(Vector_ProteinIDs_Acc_Imp3,
 
 ## Prepare the protein sequence data
 # Read the FASTA file
-Data_proteinFASTA = readLines("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New/data/Protein_Sequences.fasta")
+FASTA_AllProteins = readLines("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New/data/Protein_Sequences.fasta")
 
 # Initialize empty vectors to store the organized data
 Temp_AccNumb = vector()
 Temp_Seq = vector()
 
 # Process each line of the FASTA file
-for (i in 1:length(Data_proteinFASTA)) {
-  line = Data_proteinFASTA[i]
+for (i in 1:length(FASTA_AllProteins)) {
+  line = FASTA_AllProteins[i]
   
   # Check if the line starts with '>'
   if (startsWith(line, ">")) {
@@ -1164,8 +1164,8 @@ for (i in 1:length(Data_proteinFASTA)) {
     sequence = ""
     
     # Process the following lines until the next '>' line or the end of the file
-    for (j in (i+1):length(Data_proteinFASTA)) {
-      next_line = Data_proteinFASTA[j]
+    for (j in (i+1):length(FASTA_AllProteins)) {
+      next_line = FASTA_AllProteins[j]
       
       # Check if the next line starts with '>'
       if (startsWith(next_line, ">")) {
@@ -1183,7 +1183,7 @@ for (i in 1:length(Data_proteinFASTA)) {
 }
 
 # Assemble the 2 separate data files into one data frame
-Data_proteinFASTA = data.frame(Accession = Temp_AccNumb,
+FASTA_AllProteins = data.frame(Accession = Temp_AccNumb,
                                Protein_Sequence = Temp_Seq,
                                stringsAsFactors = FALSE)
 
@@ -1192,36 +1192,64 @@ rm(Temp_AccNumb)
 rm(Temp_Seq)
 
 # Subset the FASTA file to extract only the protein sequences of proteins found in the vector of unmapped proteins
-Data_proteinFASTA_unmapped_EMBL = Data_proteinFASTA[Data_proteinFASTA$Accession %in% Vector_UnmappedAcc_Imp3_EMBL, ]
-Data_proteinFASTA_unmapped_Entrez = Data_proteinFASTA[Data_proteinFASTA$Accession %in% Vector_UnmappedAcc_Imp3_Entrez, ]
+Data_proteinFASTA_unmapped_EMBL = FASTA_AllProteins[FASTA_AllProteins$Accession %in% Vector_UnmappedAcc_Imp3_EMBL, ]
+Data_proteinFASTA_unmapped_Entrez = FASTA_AllProteins[FASTA_AllProteins$Accession %in% Vector_UnmappedAcc_Imp3_Entrez, ]
 
-### Protein BLAST on the unmapped proteins !!!! NOT WORKING! !!!!
-# Set up empty vectors to store the pBLAST results
-Vector_Original_Accession = vector()
-Vector_BLAST_Accession = vector()
-Vector_Query_Coverage = vector()
-Vector_Identity = vector()
+### Return the subsetted data frame of the fasta data to a fasta format
+# Create an output file path for the subsetted fasta file
+FASTA_proteins_EMBL = "C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New/data/Protein_Sequences_EMBL.fasta"
 
-# Perform one pBLAST for each row of the data frame of unmapped proteins
-for (i in 1:nrow(Data_proteinFASTA_unmapped)) {
-  # Extract the protein sequence and accession number
-  sequence = Data_proteinFASTA_unmapped$Protein_Sequence[i]
-  accession = Data_proteinFASTA_unmapped$Accession[i]
+# Open the output file for writing
+FileConnection = file(FASTA_proteins_EMBL, "w")
+
+# Iterate over each row of the subsetted data frame to convert the data frame into FASTA format
+for (i in 1:nrow(Data_proteinFASTA_unmapped_EMBL)) {
+  # Retrieve the accession number and protein sequence
+  accession_number = Data_proteinFASTA_unmapped_EMBL$Accession[i]
+  protein_sequence = Data_proteinFASTA_unmapped_EMBL$Protein_Sequence[i]
   
-  # Perform protein BLAST
-  blast_result = rpsblast(query = sequence, database = "swissprot", program = "blastp", expect = 1e-10, num_descriptions = 1, num_alignments = 1)
-  
-  # Extract the information for the top hit
-  top_hit = rbind(blast_result$hits)$accession[1]
-  query_coverage = blast_result$query_coverage[1]
-  identity = blast_result$identity[1]
-  
-  # Append the information to the vectors
-  Vector_Original_Accession = c(Vector_Original_Accession, accession)
-  Vector_BLAST_Accession = c(Vector_BLAST_Accession, top_hit)
-  Vector_Query_Coverage = c(Vector_Query_Coverage, query_coverage)
-  Vector_Identity = c(Vector_Identity, identity)
+  # Write the FASTA entry to the output file
+  writeLines(paste0(">", accession_number), FileConnection)
+  writeLines(protein_sequence, FileConnection)
 }
+
+# Close the output file connection
+close(FileConnection)
+
+# Remove the temporary file connection object
+rm(FileConnection)
+
+### Do the same for the Entrez data frame
+FASTA_proteins_Entrez = "C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New/data/Protein_Sequences_Entrez.fasta"
+FileConnection = file(FASTA_proteins_Entrez, "w")
+for (i in 1:nrow(Data_proteinFASTA_unmapped_Entrez)) {
+  accession_number = Data_proteinFASTA_unmapped_Entrez$Accession[i]
+  protein_sequence = Data_proteinFASTA_unmapped_Entrez$Protein_Sequence[i]
+  writeLines(paste0(">", accession_number), FileConnection)
+  writeLines(protein_sequence, FileConnection)
+}
+close(FileConnection)
+rm(FileConnection)
+
+### Protein BLAST on the unmapped proteins !!! WORKING ON THIS !!!
+# Note: Several things are needed:
+# Note: 1) A database to which the sequences will be BLASTed
+# Note: 2) A FASTA format file containing the sequences to be BLASTed
+
+## Preparation
+# Downloading the database. In my case, I want to download the Swissprot.tar database, since I want to perform pBLAST
+if (!file.exists("SwissProt_DB")) {
+  download.file("https://ftp.ncbi.nlm.nih.gov/blast/db/swissprot.tar.gz",
+                "swissprot.tar.gz", mode = 'wb')
+  untar("swissprot.tar.gz", exdir = "SwissProt_DB")
+}
+
+# Load the BLAST database
+list.files("./SwissProt_DB/")
+BLAST_Data = blast(db = "./SwissProt_DB/swissprot")
+
+
+
 
 #### Using gProfiler for gene enrichment ####
 # Note: Requires entrez gene IDs as an input
