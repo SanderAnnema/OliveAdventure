@@ -1101,7 +1101,7 @@ Table_ProtRetent = data.frame(Method = c("NoZero", "Imp1", "Imp2", "Imp3"),
 #### !!!! BEGINNING OF GENE ENRICHMENT ANALYSIS !!!! ####
 # The proteins found in whatever data processing method is used above will be analysed using gProfiler, which requires extraction of the accession numbers of the remaining proteins, and conversion into gene IDs.
 
-#### Accession number extraction and gene ID conversion using UniProt
+#### Accession number extraction and gene ID conversion using UniProt ####
 ## Prepare data
 # Make a vector of protein IDs to be converted
 Vector_ProteinIDs_Acc_Imp3 = rownames(Data_Imp3_Mean)
