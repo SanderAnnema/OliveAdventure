@@ -1237,16 +1237,15 @@ rm(FileConnection)
 # Note: 2) A FASTA format file containing the sequences to be BLASTed
 
 ## Preparation
-# Downloading the database. In my case, I want to download the Swissprot.tar database, since I want to perform pBLAST
-if (!file.exists("SwissProt_DB")) {
-  download.file("https://ftp.ncbi.nlm.nih.gov/blast/db/swissprot.tar.gz",
-                "swissprot.tar.gz", mode = 'wb')
-  untar("swissprot.tar.gz", exdir = "SwissProt_DB")
-}
+# Confirm that blastp is properly installed
+Sys.which("blastp")
 
-# Load the BLAST database
-list.files("./SwissProt_DB/")
-BLAST_Data = blast(db = "./SwissProt_DB/swissprot")
+# Confirm that the version is correct
+system("blastp -version")
+
+
+
+
 
 
 
