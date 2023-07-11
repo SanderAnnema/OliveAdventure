@@ -1283,6 +1283,9 @@ for (i in 1:length(protein_sequences)) {
   }
 }
 
+
+
+
 #### Using gProfiler for gene enrichment ####
 # Note: Requires entrez gene IDs as an input
 
