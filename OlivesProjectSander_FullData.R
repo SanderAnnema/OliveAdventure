@@ -1238,37 +1238,19 @@ rm(FileConnection)
 # Note: 2) A FASTA format file containing the sequences to be BLASTed
 
 ## Preparation
-# Download the Swiss-Prot protein database
-options(timeout = 600)
-if (!file.exists("swissprot.tar.gz")) {
-  download.file("https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz",
-                "swissprot.tar.gz", mode = 'wb')
-}
-
-# Extract the Swiss-Prot database
-if (!file.exists("swissprot_db/uniprot_sprot.fasta")) {
-  # Extract the compressed file
-  gzfile = "swissprot.tar.gz"
-  destfile = "swissprot_db/uniprot_sprot.fasta.gz"
-  
-  # Copy the compressed file to the destination directory
-  file.copy(gzfile, destfile, overwrite = TRUE)
-  
-  # Decompress the file using R.utils::gunzip()
-  R.utils::gunzip(destfile, remove = TRUE)
-}
+# DO MANUALLY: Download the Swiss-Prot protein database from 'https://ftp.ncbi.nlm.nih.gov/blast/db/', and place it in the working directory.
+# DO MANUALLY: Then use WinRAR to extract to a new folder called 'swissprot_db'.
+# Note: It was attempted to do this through R, but it wouldn't work. Might just be me though.
 
 # Load the BLAST database
-list.files("./swissprot_db/")
-bl = blast(db = "./swissprot_db/uniprot_sprot.fasta", type = "blastp")
+list.files("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New/swissprot_db/")
+bl = blast(db = "C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New/swissprot_db/swissprot", type = "blastp")
 
 # Read the FASTA file containing the protein sequences
-protein_sequences = readAAStringSet("Protein_Sequences_EMBL.fasta")
+protein_sequences = readAAStringSet("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New/data/Protein_Sequences_EMBL.fasta")
 
 # Perform the protein BLAST
 cl = predict(bl, protein_sequences)
-
-
 
 
 
