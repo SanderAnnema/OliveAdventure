@@ -30,6 +30,7 @@ library(devtools)
 library(taxonomizr)
 library(rBLAST)
 library(clusterProfiler)
+library(R.utils)
 
 # Setting the working directory
 setwd("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New")
@@ -1237,13 +1238,35 @@ rm(FileConnection)
 # Note: 2) A FASTA format file containing the sequences to be BLASTed
 
 ## Preparation
-# Confirm that blastp is properly installed
-Sys.which("blastp")
+# Download the Swiss-Prot protein database
+options(timeout = 600)
+if (!file.exists("swissprot.tar.gz")) {
+  download.file("https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz",
+                "swissprot.tar.gz", mode = 'wb')
+}
 
-# Confirm that the version is correct
-system("blastp -version")
+# Extract the Swiss-Prot database
+if (!file.exists("swissprot_db/uniprot_sprot.fasta")) {
+  # Extract the compressed file
+  gzfile = "swissprot.tar.gz"
+  destfile = "swissprot_db/uniprot_sprot.fasta.gz"
+  
+  # Copy the compressed file to the destination directory
+  file.copy(gzfile, destfile, overwrite = TRUE)
+  
+  # Decompress the file using R.utils::gunzip()
+  R.utils::gunzip(destfile, remove = TRUE)
+}
 
+# Load the BLAST database
+list.files("./swissprot_db/")
+bl = blast(db = "./swissprot_db/uniprot_sprot.fasta", type = "blastp")
 
+# Read the FASTA file containing the protein sequences
+protein_sequences = readAAStringSet("Protein_Sequences_EMBL.fasta")
+
+# Perform the protein BLAST
+cl = predict(bl, protein_sequences)
 
 
 
