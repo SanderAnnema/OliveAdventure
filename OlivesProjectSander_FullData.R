@@ -1249,11 +1249,39 @@ bl = blast(db = "C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_rese
 # Read the FASTA file containing the protein sequences
 protein_sequences = readAAStringSet("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New/data/Protein_Sequences_EMBL.fasta")
 
-# Perform the protein BLAST
-cl = predict(bl, protein_sequences)
+# Create an empty data frame to store the results
+results = data.frame(query_protein = character(),
+                      hit_protein = character(),
+                      hit_sequence = character(),
+                      query_coverage = numeric(),
+                      sequence_identity = numeric(),
+                      stringsAsFactors = FALSE)
 
-
-
+## Perform the protein BLAST and extract the desired information
+for (i in 1:length(protein_sequences)) {
+  seq = protein_sequences[i]
+  cl = tryCatch(predict(bl, seq, BLAST_args = "-max_target_seqs 1"),
+                 error = function(e) {
+                   message(paste("Error in BLAST search for sequence", i, "-", conditionMessage(e)))
+                   NULL
+                 })
+  if (!is.null(cl) && length(cl) > 0 &&
+      all(c("pident", "qcovs", "sseqid", "sseq") %in% colnames(cl))) {
+    hit = cl[1, ]
+    if (!is.na(hit$pident) && !is.na(hit$qcovs) &&
+        !is.na(hit$sseqid) && !is.na(hit$sseq)) {
+      if (hit$pident >= 85) {
+        result = data.frame(query_protein = names(seq),
+                             hit_protein = hit$sseqid,
+                             hit_sequence = hit$sseq,
+                             query_coverage = hit$qcovs,
+                             sequence_identity = hit$pident,
+                             stringsAsFactors = FALSE)
+        results = rbind(results, result)
+      }
+    }
+  }
+}
 
 #### Using gProfiler for gene enrichment ####
 # Note: Requires entrez gene IDs as an input
