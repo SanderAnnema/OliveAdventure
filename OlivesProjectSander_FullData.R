@@ -31,6 +31,7 @@ library(taxonomizr)
 library(rBLAST)
 library(clusterProfiler)
 library(R.utils)
+library(UniprotR)
 
 # Setting the working directory
 setwd("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New")
@@ -1108,7 +1109,7 @@ Table_ProtRetent = data.frame(Method = c("NoZero", "Imp1", "Imp2", "Imp3"),
 Vector_ProteinIDs_Acc_Imp3 = rownames(Data_Imp3_Mean)
 
 # Extract only the relevant section of the accession number. So only the part after the second '|' symbol.
-Vector_ProteinIDs_Acc_Imp3 = sub("^[^|]*\\|[^|]*\\|(.*)", "\\1", Vector_ProteinIDs_Acc_Imp3)
+Vector_ProteinIDs_Acc_Imp3 = sub("^[^|]*\\|([^|]*)\\|.*", "\\1", Vector_ProteinIDs_Acc_Imp3)
 
 ## Convert the accession numbers to entrez- and EMBL gene IDs
 # Perform the conversion
@@ -1126,7 +1127,9 @@ Data_AccMapping_Imp3_EMBL_unique = Data_AccMapping_Imp3_EMBL %>%
 Vector_ProteinIDs_Imp3_EMBL = Data_AccMapping_Imp3_EMBL_unique$To
 Vector_ProteinIDs_Imp3_Entrez = Data_AccMapping_Imp3_Entrez$To
 
-
+# Also extract the correctly mapped protein IDs in the UniProt format
+Vector_ProteinIDs_Imp3_EMBL_UniP = Data_AccMapping_Imp3_EMBL_unique$From
+Vector_ProteinIDs_Imp3_Entrez_UniP = Data_AccMapping_Imp3_Entrez$From
 
 
 #### Recovering unmapped proteins with pBLAST ####
@@ -1286,7 +1289,18 @@ for (i in 1:length(protein_sequences)) {
 
 
 
-#### Using gProfiler for gene enrichment ####
+#### Using uniprotR for gene ontology mapping ####
+# Retrieve protein gene ontology data
+Data_GO_EMBL = GetProteinGOInfo(Vector_ProteinIDs_Imp3_EMBL_UniP, directorypath = NULL)
+
+# Plot the GO data
+Plot_GO_EMBL = PlotEnrichedGO(Vector_ProteinIDs_Imp3_EMBL_UniP, OS = "lpentosus", p_value = 0.05, Path = "C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New", theme = "aaas", width = 7, height = 7)
+Plot_GO_Entrez = PlotEnrichedGO(Vector_ProteinIDs_Imp3_Entrez_UniP, OS = "lpentosus", p_value = 0.05, Path = "C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New", theme = "aaas", width = 7, height = 7)
+
+
+
+
+#### Using gProfiler for gene enrichment !!! DOESN'T WORK !!! ####
 # Note: Requires entrez gene IDs as an input
 
 # Make a vector out of the entrez gene IDs
