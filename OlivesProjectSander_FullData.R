@@ -1109,13 +1109,18 @@ Table_ProtRetent = data.frame(Method = c("NoZero", "Imp1", "Imp2", "Imp3"),
 Vector_ProteinIDs_Acc_Imp3 = rownames(Data_Imp3_Mean)
 
 # Extract only the relevant section of the accession number. So only the part after the second '|' symbol.
-Vector_ProteinIDs_Acc_Imp3 = sub("^[^|]*\\|([^|]*)\\|.*", "\\1", Vector_ProteinIDs_Acc_Imp3)
+Vector_ProteinIDs_Acc_Imp3 = sub("^[^|]*\\|[^|]*\\|(.*)", "\\1", Vector_ProteinIDs_Acc_Imp3)
 
-## Convert the accession numbers to entrez- and EMBL gene IDs
+## Convert the accession numbers to entrez-, EMBL- and KEGG gene IDs 
 # Perform the conversion
 Data_AccMapping_Imp3_EMBL = mapUniProt(from = "UniProtKB_AC-ID", to = 'EMBL-GenBank-DDBJ', query = Vector_ProteinIDs_Acc_Imp3)
 Data_AccMapping_Imp3_Entrez = mapUniProt(from = "UniProtKB_AC-ID", to = 'GeneID', query = Vector_ProteinIDs_Acc_Imp3)
 
+# Perform the conversion for the KEGG format. This one takes way too long, as I stopped my attempt at 03:33:33. It works I think, but it's easier to manually run it in the web tool at https://www.uniprot.org/id-mapping
+# Data_AccMapping_Imp3_KEGG = mapUniProt(from = "UniProtKB_AC-ID", to = 'KEGG', query = Vector_ProteinIDs_Acc_Imp3)
+
+# Loading the KEGG conversion data from the manual conversion
+Data_AccMapping_Imp3_KEGG = 
 
 # Since there were multiple gene IDs found per accession number, the data needs to be trimmed. I will take only the first gene ID found per accession number
 Data_AccMapping_Imp3_EMBL_unique = Data_AccMapping_Imp3_EMBL %>%
@@ -1247,7 +1252,7 @@ rm(FileConnection)
 
 # Load the BLAST database
 list.files("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New/swissprot_db/")
-bl = blast(db = "C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New/swissprot_db/swissprot", type = "blastp")
+DB_BLAST = blast(db = "C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New/swissprot_db/swissprot", type = "blastp")
 
 # Read the FASTA file containing the protein sequences
 protein_sequences = readAAStringSet("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New/data/Protein_Sequences_EMBL.fasta")
@@ -1263,7 +1268,7 @@ results = data.frame(query_protein = character(),
 ## Perform the protein BLAST and extract the desired information
 for (i in 1:length(protein_sequences)) {
   seq = protein_sequences[i]
-  cl = tryCatch(predict(bl, seq, BLAST_args = "-max_target_seqs 1"),
+  cl = tryCatch(predict(DB_BLAST, seq, BLAST_args = "-max_target_seqs 1"),
                  error = function(e) {
                    message(paste("Error in BLAST search for sequence", i, "-", conditionMessage(e)))
                    NULL
@@ -1290,12 +1295,53 @@ for (i in 1:length(protein_sequences)) {
 
 
 #### Using uniprotR for gene ontology mapping ####
-# Retrieve protein gene ontology data
-Data_GO_EMBL = GetProteinGOInfo(Vector_ProteinIDs_Imp3_EMBL_UniP, directorypath = NULL)
+## Prepare the data
+# Generate a vector lacking the suffix '_LACPE'
+Vector_ProteinIDs_Acc_Imp3_Full_Trim = gsub("_LACPE$", "", Vector_ProteinIDs_Acc_Imp3)
+Vector_ProteinIDs_Acc_Imp3_EMBL_Trim = gsub("_LACPE$", "", Vector_ProteinIDs_Imp3_EMBL_UniP)
+Vector_ProteinIDs_Acc_Imp3_Entrez_Trim = gsub("_LACPE$", "", Vector_ProteinIDs_Imp3_Entrez_UniP)
 
-# Plot the GO data
-Plot_GO_EMBL = PlotEnrichedGO(Vector_ProteinIDs_Imp3_EMBL_UniP, OS = "lpentosus", p_value = 0.05, Path = "C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New", theme = "aaas", width = 7, height = 7)
-Plot_GO_Entrez = PlotEnrichedGO(Vector_ProteinIDs_Imp3_Entrez_UniP, OS = "lpentosus", p_value = 0.05, Path = "C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New", theme = "aaas", width = 7, height = 7)
+# Retrieve protein gene ontology data
+Data_GO_Full = GetProteinGOInfo(Vector_ProteinIDs_Acc_Imp3_Trim, directorypath = NULL)
+Data_GO_EMBL = GetProteinGOInfo(Vector_ProteinIDs_Acc_Imp3_EMBL_Trim, directorypath = NULL)
+Data_GO_Entrez = GetProteinGOInfo(Vector_ProteinIDs_Acc_Imp3_Entrez_Trim, directorypath = NULL)
+
+## Visualize the data
+# Plot the subcellular functions of the retrieved GO data
+Plot_GO_Subs_Full = Plot.GOSubCellular(Data_GO_Full, Top = 10, directorypath = NULL)
+Plot_GO_Subs_EMBL = Plot.GOSubCellular(Data_GO_EMBL, Top = 10, directorypath = NULL)
+Plot_GO_Subs_Entrez = Plot.GOSubCellular(Data_GO_Entrez, Top = 10, directorypath = NULL)
+
+# Save the plots
+pdf("Plot_GO_Subs_Full.pdf", width = 8, height = 6)
+print(Plot_GO_Subs_Full)
+dev.off()
+
+pdf("Plot_GO_Subs_EMBL.pdf", width = 8, height = 6)
+print(Plot_GO_Subs_EMBL)
+dev.off()
+
+pdf("Plot_GO_Subs_Entrez.pdf", width = 8, height = 6)
+print(Plot_GO_Subs_Entrez)
+dev.off()
+
+# Plot the molecular functions of the retrieved GO data
+Plot_GO_Mol_Full = Plot.GOMolecular(Data_GO_Full, Top = 10, directorypath = NULL)
+Plot_GO_Mol_EMBL = Plot.GOMolecular(Data_GO_EMBL, Top = 10, directorypath = NULL)
+Plot_GO_Mol_Entrez = Plot.GOMolecular(Data_GO_Entrez, Top = 10, directorypath = NULL)
+
+# Save the plots
+pdf("Plot_GO_Mol_Full.pdf", width = 8, height = 6)
+print(Plot_GO_Mol_Full)
+dev.off()
+
+pdf("Plot_GO_Mol_EMBL.pdf", width = 8, height = 6)
+print(Plot_GO_Mol_EMBL)
+dev.off()
+
+pdf("Plot_GO_Mol_Entrez.pdf", width = 8, height = 6)
+print(Plot_GO_Mol_Entrez)
+dev.off()
 
 
 
@@ -1304,10 +1350,10 @@ Plot_GO_Entrez = PlotEnrichedGO(Vector_ProteinIDs_Imp3_Entrez_UniP, OS = "lpento
 # Note: Requires entrez gene IDs as an input
 
 # Make a vector out of the entrez gene IDs
-Vector_GeneID_Entrez = Data_AccMapping_Imp3_Entrez$To
+Vector_GeneID_KEGG = Data_AccMapping_Imp3_KEGG$To
 
 # Perform the KEGG gene enrichment
-Output_KEGGenrich = enrichKEGG(gene = Vector_GeneID_Entrez, organism = "lpg", keyType = "kegg", pvalueCutoff = 0.05, pAdjustMethod = "BH", universe = NULL, minGSSize = 10, maxGSSize = 500, qvalueCutoff = 0.2, use_internal_data = FALSE)
+Output_KEGGenrich = enrichKEGG(gene = Vector_GeneID_EMBL, organism = "lpg", keyType = "kegg", pvalueCutoff = 0.05, pAdjustMethod = "BH", universe = NULL, minGSSize = 10, maxGSSize = 500, qvalueCutoff = 0.2, use_internal_data = FALSE)
 
 
 
