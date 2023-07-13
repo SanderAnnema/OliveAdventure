@@ -32,6 +32,7 @@ library(rBLAST)
 library(clusterProfiler)
 library(R.utils)
 library(UniprotR)
+library(UpSetR)
 
 # Setting the working directory
 setwd("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New")
@@ -1120,7 +1121,7 @@ Data_AccMapping_Imp3_Entrez = mapUniProt(from = "UniProtKB_AC-ID", to = 'GeneID'
 # Data_AccMapping_Imp3_KEGG = mapUniProt(from = "UniProtKB_AC-ID", to = 'KEGG', query = Vector_ProteinIDs_Acc_Imp3)
 
 # Loading the KEGG conversion data from the manual conversion
-Data_AccMapping_Imp3_KEGG = 
+Data_AccMapping_Imp3_KEGG = NULL
 
 # Since there were multiple gene IDs found per accession number, the data needs to be trimmed. I will take only the first gene ID found per accession number
 Data_AccMapping_Imp3_EMBL_unique = Data_AccMapping_Imp3_EMBL %>%
@@ -1135,6 +1136,79 @@ Vector_ProteinIDs_Imp3_Entrez = Data_AccMapping_Imp3_Entrez$To
 # Also extract the correctly mapped protein IDs in the UniProt format
 Vector_ProteinIDs_Imp3_EMBL_UniP = Data_AccMapping_Imp3_EMBL_unique$From
 Vector_ProteinIDs_Imp3_Entrez_UniP = Data_AccMapping_Imp3_Entrez$From
+
+## Visualize the mapping
+# Merge the mapping results
+Data_Mapping = merge(Data_AccMapping_Imp3_EMBL_unique, Data_AccMapping_Imp3_Entrez, by = "From", all = TRUE)
+
+# Create a logical column indicating if a protein is mapped in each method
+Data_Mapping$EMBL_mapped = !is.na(Data_Mapping$To.x)
+Data_Mapping$Entrez_mapped = !is.na(Data_Mapping$To.y)
+
+# Generate an overlap matrix
+mapped_both = sum(Data_Mapping$EMBL_mapped & Data_Mapping$Entrez_mapped)
+mapped_embl_only = sum(Data_Mapping$EMBL_mapped & !Data_Mapping$Entrez_mapped)
+mapped_entrez_only = sum(!Data_Mapping$EMBL_mapped & Data_Mapping$Entrez_mapped)
+not_mapped = sum(!Data_Mapping$EMBL_mapped & !Data_Mapping$Entrez_mapped)
+
+Matrix_Overlap = matrix(
+  c(mapped_both, mapped_embl_only, mapped_entrez_only, not_mapped),
+  nrow = 2, ncol = 2, byrow = TRUE,
+  dimnames = list(c("EMBL", "Entrez"), c("Mapped", "Not Mapped"))
+)
+
+rm(mapped_both)
+rm(mapped_embl_only)
+rm(mapped_entrez_only)
+rm(not_mapped)
+
+# Draw the heatmap
+Plot_Heat_Mapping = pheatmap(Matrix_Overlap, 
+         color = c("white", "skyblue"),
+         cluster_rows = FALSE, cluster_cols = FALSE,
+         border_color = NA,
+         main = "Mapping Results")
+
+## Create a new data frame containing the unmapped proteins as well
+# Create a new data frame with the unmapped proteins
+unmapped_proteins = data.frame(From = setdiff(Vector_ProteinIDs_Acc_Imp3, Data_Mapping$From),
+                                To.x = NA, To.y = NA,
+                                EMBL_mapped = FALSE, Entrez_mapped = FALSE)
+
+# Combine the additional proteins with the existing mapping data
+Data_Mapping_All = rbind(Data_Mapping, unmapped_proteins)
+
+# Generate logical columns indicating if a protein is mapped in each method
+Data_Mapping_All$EMBL_mapped = !is.na(Data_Mapping_All$To.x)
+Data_Mapping_All$Entrez_mapped = !is.na(Data_Mapping_All$To.y)
+
+rm(unmapped_proteins)
+
+# Draw another heatmap, which includes unmapped proteins
+mapped_both = sum(Data_Mapping_All$EMBL_mapped & Data_Mapping_All$Entrez_mapped)
+mapped_embl_only = sum(Data_Mapping_All$EMBL_mapped & !Data_Mapping_All$Entrez_mapped)
+mapped_entrez_only = sum(!Data_Mapping_All$EMBL_mapped & Data_Mapping_All$Entrez_mapped)
+not_mapped = sum(!Data_Mapping_All$EMBL_mapped & !Data_Mapping_All$Entrez_mapped)
+
+Matrix_Overlap_All = matrix(
+  c(mapped_both, mapped_embl_only, mapped_entrez_only, not_mapped),
+  nrow = 2, ncol = 2, byrow = TRUE,
+  dimnames = list(c("EMBL", "Entrez"), c("Mapped", "Not Mapped"))
+)
+
+rm(mapped_both)
+rm(mapped_embl_only)
+rm(mapped_entrez_only)
+rm(not_mapped)
+
+# Draw the heatmap
+Plot_Heat_Mapping_All = pheatmap(Matrix_Overlap_All, 
+         color = c("white", "skyblue"),
+         cluster_rows = FALSE, cluster_cols = FALSE,
+         border_color = NA,
+         main = "Mapping Results")
+
+
 
 
 #### Recovering unmapped proteins with pBLAST ####
@@ -1258,7 +1332,7 @@ DB_BLAST = blast(db = "C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2n
 protein_sequences = readAAStringSet("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New/data/Protein_Sequences_EMBL.fasta")
 
 # Create an empty data frame to store the results
-results = data.frame(query_protein = character(),
+Results_pBLAST = data.frame(query_protein = character(),
                       hit_protein = character(),
                       hit_sequence = character(),
                       query_coverage = numeric(),
@@ -1302,7 +1376,7 @@ Vector_ProteinIDs_Acc_Imp3_EMBL_Trim = gsub("_LACPE$", "", Vector_ProteinIDs_Imp
 Vector_ProteinIDs_Acc_Imp3_Entrez_Trim = gsub("_LACPE$", "", Vector_ProteinIDs_Imp3_Entrez_UniP)
 
 # Retrieve protein gene ontology data
-Data_GO_Full = GetProteinGOInfo(Vector_ProteinIDs_Acc_Imp3_Trim, directorypath = NULL)
+Data_GO_Full = GetProteinGOInfo(Vector_ProteinIDs_Acc_Imp3_Full_Trim, directorypath = NULL)
 Data_GO_EMBL = GetProteinGOInfo(Vector_ProteinIDs_Acc_Imp3_EMBL_Trim, directorypath = NULL)
 Data_GO_Entrez = GetProteinGOInfo(Vector_ProteinIDs_Acc_Imp3_Entrez_Trim, directorypath = NULL)
 
