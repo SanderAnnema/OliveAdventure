@@ -1421,7 +1421,7 @@ dev.off()
 
 
 #### Using gProfiler for gene enrichment !!! DOESN'T WORK !!! ####
-# Note: Requires entrez gene IDs as an input
+# Note: Requires KEGG gene IDs as an input
 
 # Make a vector out of the entrez gene IDs
 Vector_GeneID_KEGG = Data_AccMapping_Imp3_KEGG$To
