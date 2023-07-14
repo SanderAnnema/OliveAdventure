@@ -28,7 +28,7 @@ library(gProfileR)
 library(gprofiler2)
 library(devtools)
 library(taxonomizr)
-library(rBLAST)
+library(annotate)
 library(clusterProfiler)
 library(R.utils)
 library(UniprotR)
@@ -1211,7 +1211,7 @@ Plot_Heat_Mapping_All = pheatmap(Matrix_Overlap_All,
 
 
 
-#### Recovering unmapped proteins with pBLAST ####
+#### Recovering unmapped proteins preparation ####
 ## Some accession numbers couldn't be converted, so the unmapped accession numbers will be extracted, and pBLAST will be used to find similar proteins form Lactobacillus
 ## Take the mapped protein vector, convert it back to accession numbers, and make a new vector containing all the accession numbers that are missing
 
@@ -1275,8 +1275,10 @@ rm(Temp_AccNumb)
 rm(Temp_Seq)
 
 # Subset the FASTA file to extract only the protein sequences of proteins found in the vector of unmapped proteins
+Data_proteinFASTA_AllExp = FASTA_AllProteins[FASTA_AllProteins$Accession %in% Vector_ProteinIDs_Acc_Imp3, ]
 Data_proteinFASTA_unmapped_EMBL = FASTA_AllProteins[FASTA_AllProteins$Accession %in% Vector_UnmappedAcc_Imp3_EMBL, ]
 Data_proteinFASTA_unmapped_Entrez = FASTA_AllProteins[FASTA_AllProteins$Accession %in% Vector_UnmappedAcc_Imp3_Entrez, ]
+
 
 ### Return the subsetted data frame of the fasta data to a fasta format
 # Create an output file path for the subsetted fasta file
@@ -1314,55 +1316,62 @@ for (i in 1:nrow(Data_proteinFASTA_unmapped_Entrez)) {
 close(FileConnection)
 rm(FileConnection)
 
-### Protein BLAST on the unmapped proteins !!! WORKING ON THIS !!!
-# Note: Several things are needed:
-# Note: 1) A database to which the sequences will be BLASTed
-# Note: 2) A FASTA format file containing the sequences to be BLASTed
 
-## Preparation
-# DO MANUALLY: Download the Swiss-Prot protein database from 'https://ftp.ncbi.nlm.nih.gov/blast/db/', and place it in the working directory.
-# DO MANUALLY: Then use WinRAR to extract to a new folder called 'swissprot_db'.
-# Note: It was attempted to do this through R, but it wouldn't work. Might just be me though.
 
-# Load the BLAST database
-list.files("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New/swissprot_db/")
-DB_BLAST = blast(db = "C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New/swissprot_db/swissprot", type = "blastp")
 
-# Read the FASTA file containing the protein sequences
-protein_sequences = readAAStringSet("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New/data/Protein_Sequences_EMBL.fasta")
+#### Protein BLAST on the unmapped proteins (!!! DOESN'T WORK !!!) ####
+## Test run with the first protein, which in the online tool works fine and quick
+# Subset the first row of the FASTA dataframe
+Data_proteinFASTA_Test = Data_proteinFASTA_unmapped_EMBL[1, ]
 
-# Create an empty data frame to store the results
-Results_pBLAST = data.frame(query_protein = character(),
-                      hit_protein = character(),
-                      hit_sequence = character(),
-                      query_coverage = numeric(),
-                      sequence_identity = numeric(),
-                      stringsAsFactors = FALSE)
+# Extract a vector of only the protein sequence
+Vector_proteinSeq_Test = Data_proteinFASTA_Test$Protein_Sequence
 
-## Perform the protein BLAST and extract the desired information
-for (i in 1:length(protein_sequences)) {
-  seq = protein_sequences[i]
-  cl = tryCatch(predict(DB_BLAST, seq, BLAST_args = "-max_target_seqs 1"),
-                 error = function(e) {
-                   message(paste("Error in BLAST search for sequence", i, "-", conditionMessage(e)))
-                   NULL
-                 })
-  if (!is.null(cl) && length(cl) > 0 &&
-      all(c("pident", "qcovs", "sseqid", "sseq") %in% colnames(cl))) {
-    hit = cl[1, ]
-    if (!is.na(hit$pident) && !is.na(hit$qcovs) &&
-        !is.na(hit$sseqid) && !is.na(hit$sseq)) {
-      if (hit$pident >= 85) {
-        result = data.frame(query_protein = names(seq),
-                             hit_protein = hit$sseqid,
-                             hit_sequence = hit$sseq,
-                             query_coverage = hit$qcovs,
-                             sequence_identity = hit$pident,
-                             stringsAsFactors = FALSE)
-        results = rbind(results, result)
-      }
-    }
-  }
+# Run a protein BLAST
+Result_BLAST_Test = blastSequences(Vector_proteinSeq_Test,  "swissprot", program="blastp", as="data.frame", timeout = 5000)
+
+## The EMBL mapping
+# Create a data frame to store the best hit per sequence
+Data_pBLAST_ResultBest_EMBL = data.frame(Query = character(), Hit_ID = character(), E_Value = numeric(), stringsAsFactors = FALSE)
+
+# Iterate over each row of Data_proteinFASTA_unmapped_EMBL
+for (i in 1:nrow(Data_proteinFASTA_unmapped_EMBL)) {
+  # Retrieve the values from the Protein_Sequence column
+  dummySequence = Data_proteinFASTA_unmapped_EMBL[i, "Protein_Sequence"]
+  
+  # Perform the BLAST analysis for the current sequence
+  blastResult = blastSequences(dummySequence, "swissprot", program = "blastp", as = "data.frame", timeout = 5000)
+  
+  # Retrieve the top hit (best match) from the BLAST result
+  topHit = blastResult[which.min(blastResult$E_Value), ]
+  
+  # Retrieve the query sequence
+  querySequence = dummySequence
+  
+  # Store the best hit in the Data_pBLAST_ResultBest_Entrez data frame
+  bestHits = rbind(Data_pBLAST_ResultBest_Entrez, data.frame(Query = querySequence, Hit_ID = topHit$Hit_ID, E_Value = topHit$E_Value, stringsAsFactors = FALSE))
+}
+
+## The Entrez mapping
+# Create a data frame to store the best hit per sequence
+Data_pBLAST_ResultBest_Entrez = data.frame(Query = character(), Hit_ID = character(), E_Value = numeric(), stringsAsFactors = FALSE)
+
+# Iterate over each row of Data_proteinFASTA_unmapped_Entrez
+for (i in 1:nrow(Data_proteinFASTA_unmapped_Entrez)) {
+  # Retrieve the values from the Protein_Sequence column
+  dummySequence = Data_proteinFASTA_unmapped_Entrez[i, "Protein_Sequence"]
+  
+  # Perform the BLAST analysis for the current sequence
+  blastResult = blastSequences(dummySequence, "swissprot", program = "blastp", as = "data.frame", timeout = 5000)
+  
+  # Retrieve the top hit (best match) from the BLAST result
+  topHit = blastResult[which.min(blastResult$E_Value), ]
+  
+  # Retrieve the query sequence
+  querySequence = dummySequence
+  
+  # Store the best hit in the Data_pBLAST_ResultBest_Entrez data frame
+  bestHits = rbind(Data_pBLAST_ResultBest_Entrez, data.frame(Query = querySequence, Hit_ID = topHit$Hit_ID, E_Value = topHit$E_Value, stringsAsFactors = FALSE))
 }
 
 
