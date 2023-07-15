@@ -35,6 +35,7 @@ library(UniprotR)
 library(UpSetR)
 library(ComplexHeatmap)
 library(circlize)
+library(ggplotify)
 
 # Setting the working directory
 setwd("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New")
@@ -392,6 +393,7 @@ Function_drawHeatmap = function(data, ANOVA_output, title = title, fontsize_rows
   # Convert the 'accession' column into row names and delete the column
   rownames(Matrix_heatmap) = Matrix_heatmap$Accession
   Matrix_heatmap$Accession = NULL
+  Matrix_heatmap = as.matrix(Matrix_heatmap)
   
   ## Draw the heatmap
   # Specify a randomized number to ensure a reproducible heatmap
@@ -405,6 +407,89 @@ Function_drawHeatmap = function(data, ANOVA_output, title = title, fontsize_rows
                           fontsize_row = fontsize_rows)
   
   return(Plot_heatmap)
+}
+
+### Heatmap generation with the ComplexHeatmap package
+Function_drawHeatmap_Complex = function(data, ANOVA_output, title, fontsize = 2) {
+  ## Data preparation
+  # Create a new column for the accession numbers needed for the analysis
+  data$Accession = rownames(data)
+  
+  # Move the column to the beginning, removing the copy and the row names.
+  rownames(data) = NULL
+  data = data[, c("Accession", names(data)[-ncol(data)])]
+  
+  # Convert the data frame to a long format
+  data_long = Function_makeLong(data, exclude_columns = "Accession")
+  
+  # Separate the variable column into 3
+  data_long = separate(data_long, variable, c("variable_type", "sensitivity_type", "replicate"))
+  
+  # Set the data types
+  data_long$variable_type = as.factor(data_long$variable_type)
+  data_long$sensitivity_type = as.factor(data_long$sensitivity_type)
+  data_long$intensity = as.numeric(data_long$value)
+  data_long$replicate = as.factor(data_long$replicate)
+  
+  ## Heatmap data prep
+  # Create a vector containing the accession numbers of the significant proteins
+  Sign_Prot = ANOVA_output$Data_ANOVA_signProteins$Accession
+  
+  # Subset the intensity data frame to retain only significant proteins
+  sub_data = subset(data_long, Accession %in% Sign_Prot)
+  
+  # Convert the intensities to log2 to decrease variance between samples
+  sub_data$log2_intensity = log2(sub_data$intensity)
+  
+  # Calculate the overall mean of all the significant protein intensities individually
+  Data_meanSD = aggregate(log2_intensity ~ Accession, data = sub_data, FUN = mean)
+  colnames(Data_meanSD)[2] = "overall_mean"
+  
+  # Calculate the standard deviation for each mean and add it to the data frame
+  data_sd = aggregate(log2_intensity ~ Accession, data = sub_data, FUN = sd)
+  colnames(data_sd)[2] = "overall_sd"
+  Data_meanSD = merge(Data_meanSD, data_sd, by = "Accession")
+  
+  # Calculate the z-values
+  Data_heatmap = data.frame(sub_data, z_value = (sub_data$log2_intensity - Data_meanSD$overall_mean[match(sub_data$Accession, Data_meanSD$Accession)]) / Data_meanSD$overall_sd[match(sub_data$Accession, Data_meanSD$Accession)])
+  
+  # Ensure the z_value column is numeric
+  Data_heatmap$z_value = as.numeric(as.character(Data_heatmap$z_value))
+  
+  # Select the relevant columns from Data_heatmap
+  rel_col = Data_heatmap[, c("Accession", "variable_type", "sensitivity_type", "replicate", "z_value")]
+  rel_col$z_value = as.numeric(as.character(rel_col$z_value))
+  
+  # Pivot the data to create a matrix with proteins as rows and combinations as columns
+  Matrix_heatmap = reshape2::dcast(rel_col, Accession ~ variable_type + sensitivity_type + replicate, 
+                                   value.var = "z_value")
+  
+  # Convert the 'accession' column into row names and delete the column
+  rownames(Matrix_heatmap) = Matrix_heatmap$Accession
+  Matrix_heatmap$Accession = NULL
+  
+  # Convert the matrix to a HeatmapList format
+  Matrix_heatmap = as.matrix(Matrix_heatmap)
+  
+  ## Draw the heatmap
+  # Specify a randomized number to ensure a reproducible heatmap
+  set.seed(12345)
+  
+  # Define annotations for the heatmap
+  heat_colors = colorRamp2(c(-3, 0, 3), c("blue", "white", "red"))
+  col_annotation = HeatmapAnnotation(df = data.frame(replicate = unique(rel_col$replicate)), 
+                                     col = list(replicate = c("1" = "blue", "2" = "green", "3" = "red")))
+  
+  # Draw the heatmap
+  Plot_heatmap_complex = Heatmap(Matrix_heatmap, name = "Z-value",
+                                 col = heat_colors,
+                                 cluster_rows = TRUE, cluster_columns = TRUE,
+                                 show_row_names = TRUE, show_column_names = FALSE,
+                                 row_names_side = "right",
+                                 column_title =  title,
+                                 row_names_gp = gpar(fontsize = fontsize))
+  
+  return(Plot_heatmap_complex)
 }
 
 ### Heatmap generation with gene ontology
@@ -709,6 +794,13 @@ Function_savePlot(Plot_Box_NoZero_Mean, filename = "MeanIntens_Complete.png", pl
 
 #### 2-way ANOVA of the NoZero dataset ####
 ### Differential expression analysis with a 2-way ANOVA between controls and treated samples
+# Rename the accession numbers to the shortened version
+Vector_Temp = rownames(Data_NoZero_Mean)
+Vector_Temp = sub("^[^|]*\\|[^|]*\\|(.*)", "\\1", Vector_Temp)
+Vector_Temp = gsub("_LACPE$", "", Vector_Temp)
+rownames(Data_NoZero_Mean) = Vector_Temp
+rm(Vector_Temp)
+
 ## Perform the 2-way ANOVA with p-value adjustment
 Output_ANOVA_NoZero = Function_performANOVA(Data_NoZero_Mean, p_value = 0.01)
 
@@ -717,9 +809,10 @@ Output_ANOVA_NoZero = Function_performANOVA(Data_NoZero_Mean, p_value = 0.01)
 
 #### Heatmap generation ####
 ## Perform the heatmap generation
-Plot_Heat_NoZero = Function_drawHeatmap(Data_NoZero_Mean, Output_ANOVA_NoZero, title = "Heatmap depicting z-values of proteins with complete data", fontsize_rows = 5)
+Plot_Heat_NoZero = Function_drawHeatmap_Complex(Data_NoZero_Mean, Output_ANOVA_NoZero, title = "Heatmap depicting z-values of proteins with complete data", fontsize = 5)
 
 ## Save the heatmap as a PNG
+Plot_Heat_NoZero = ggplotify::as.ggplot(Plot_Heat_NoZero)
 ggsave("Heatmap_NoZero.png", plot = Plot_Heat_NoZero,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
@@ -843,6 +936,11 @@ Function_savePlot(Plot_Box_Imp1_Mean, "IntensDistrib_Box_Imp1_Mean.png", plotTyp
 
 #### 2-way ANOVA of the Imp1 dataset ####
 ### Differential expression analysis with a 2-way ANOVA between controls and treated samples
+Vector_Temp = rownames(Data_Imp1_Mean)
+Vector_Temp = sub("^[^|]*\\|[^|]*\\|(.*)", "\\1", Vector_Temp)
+Vector_Temp = gsub("_LACPE$", "", Vector_Temp)
+rownames(Data_Imp1_Mean) = Vector_Temp
+
 ## Perform the 2-way ANOVA with p-value adjustment
 Output_ANOVA_Imp1 = Function_performANOVA(Data_Imp1_Mean, p_value = 0.01)
 
@@ -851,9 +949,10 @@ Output_ANOVA_Imp1 = Function_performANOVA(Data_Imp1_Mean, p_value = 0.01)
 
 #### Heatmap generation ####
 ## Perform the heatmap generation
-Plot_Heat_Imp1 = Function_drawHeatmap(Data_Imp1_Mean, Output_ANOVA_Imp1, title = "Heatmap depicting z-values of proteins with imputed data (method 1)", fontsize_rows = 5)
+Plot_Heat_Imp1 = Function_drawHeatmap_Complex(Data_Imp1_Mean, Output_ANOVA_Imp1, title = "Heatmap depicting z-values of proteins with imputed data (method 1)", fontsize = 5)
 
 ## Save the heatmap as a PNG
+Plot_Heat_Imp1 = ggplotify::as.ggplot(Plot_Heat_Imp1)
 ggsave("Heatmap_Imp1.png", plot = Plot_Heat_Imp1,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
@@ -1020,9 +1119,10 @@ Output_ANOVA_Imp2 = Function_performANOVA(Data_Imp2_Mean, p_value = 0.01)
 
 #### Heatmap generation ####
 ## Perform the heatmap generation
-Plot_Heat_Imp2 = Function_drawHeatmap(Data_Imp2_Mean, Output_ANOVA_Imp2, title = "Heatmap depicting z-values of proteins with imputed data (method 2)", fontsize_rows = 2)
+Plot_Heat_Imp2 = Function_drawHeatmap_Complex(Data_Imp2_Mean, Output_ANOVA_Imp2, title = "Heatmap depicting z-values of proteins with imputed data (method 2)", fontsize = 2)
 
 ## Save the heatmap as a PNG
+Plot_Heat_Imp2 = ggplotify::as.ggplot(Plot_Heat_Imp2)
 ggsave("Heatmap_Imp2.png", plot = Plot_Heat_Imp2,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
@@ -1123,6 +1223,12 @@ Function_savePlot(Plot_Box_Imp3_Mean, "IntensDistrib_Box_Imp3_Mean.png", plotTyp
 
 #### 2-way ANOVA of the Imp3 dataset ####
 ### Differential expression analysis with a 2-way ANOVA between controls and treated samples
+Vector_Temp = rownames(Data_Imp3_Mean)
+Vector_Temp = sub("^[^|]*\\|[^|]*\\|(.*)", "\\1", Vector_Temp)
+Vector_Temp = gsub("_LACPE$", "", Vector_Temp)
+rownames(Data_Imp3_Mean) = Vector_Temp
+rm(Vector_Temp)
+
 ## Perform the 2-way ANOVA with p-value adjustment
 Output_ANOVA_Imp3 = Function_performANOVA(Data_Imp3_Mean, p_value = 0.01)
 
@@ -1131,9 +1237,10 @@ Output_ANOVA_Imp3 = Function_performANOVA(Data_Imp3_Mean, p_value = 0.01)
 
 #### Heatmap generation ####
 ## Perform the heatmap generation
-Plot_Heat_Imp3 = Function_drawHeatmap(Data_Imp3_Mean, Output_ANOVA_Imp3, title = "Heatmap depicting z-values of proteins with imputed data (method 3)", fontsize_rows = 2)
+Plot_Heat_Imp3 = Function_drawHeatmap_Complex(Data_Imp3_Mean, Output_ANOVA_Imp3, title = "Heatmap depicting z-values of proteins with imputed data (method 3)", fontsize = 2)
 
 ## Save the heatmap as a PNG
+Plot_Heat_Imp3 = ggplotify::as.ggplot(Plot_Heat_Imp3)
 ggsave("Heatmap_Imp3.png", plot = Plot_Heat_Imp3,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
@@ -1188,7 +1295,7 @@ Vector_ProteinIDs_Imp2_Entrez = Data_AccMapping_Imp2_Entrez$To
 Vector_ProteinIDs_Imp2_EMBL_UniP = Data_AccMapping_Imp2_EMBL_unique$From
 Vector_ProteinIDs_Imp2_Entrez_UniP = Data_AccMapping_Imp2_Entrez$From
 
-## Visualize the mapping
+## Visualize the mapping !!! WORKING ON THIS !!!
 # Merge the mapping results
 Data_Mapping_Imp2 = merge(Data_AccMapping_Imp2_EMBL_unique, Data_AccMapping_Imp2_Entrez, by = "From", all = TRUE)
 
@@ -1196,71 +1303,18 @@ Data_Mapping_Imp2 = merge(Data_AccMapping_Imp2_EMBL_unique, Data_AccMapping_Imp2
 Data_Mapping_Imp2$EMBL_mapped = !is.na(Data_Mapping_Imp2$To.x)
 Data_Mapping_Imp2$Entrez_mapped = !is.na(Data_Mapping_Imp2$To.y)
 
-# Generate an overlap matrix
-mapped_both = sum(Data_Mapping_Imp2$EMBL_mapped & Data_Mapping_Imp2$Entrez_mapped)
-mapped_embl_only = sum(Data_Mapping_Imp2$EMBL_mapped & !Data_Mapping_Imp2$Entrez_mapped)
-mapped_entrez_only = sum(!Data_Mapping_Imp2$EMBL_mapped & Data_Mapping_Imp2$Entrez_mapped)
-not_mapped = sum(!Data_Mapping_Imp2$EMBL_mapped & !Data_Mapping_Imp2$Entrez_mapped)
+# Create the UpSet plot
+Data_UpSet_Imp2 = Data_Mapping_Imp2 %>%
+  mutate(MappingStatus = case_when(
+    EMBL_mapped & Entrez_mapped ~ "Both",
+    EMBL_mapped ~ "EMBL",
+    Entrez_mapped ~ "Entrez",
+    TRUE ~ "None"
+  )) %>%
+  count(MappingStatus) %>%
+  filter(MappingStatus != "None")
 
-Matrix_Overlap_Imp2 = matrix(
-  c(mapped_both, mapped_embl_only, mapped_entrez_only, not_mapped),
-  nrow = 2, ncol = 2, byrow = TRUE,
-  dimnames = list(c("EMBL", "Entrez"), c("Mapped", "Not Mapped"))
-)
-
-rm(mapped_both)
-rm(mapped_embl_only)
-rm(mapped_entrez_only)
-rm(not_mapped)
-
-# Draw the heatmap
-Plot_Heat_Mapping_Imp2 = pheatmap(Matrix_Overlap_Imp2, 
-         color = c("white", "skyblue"),
-         cluster_rows = FALSE, cluster_cols = FALSE,
-         border_color = NA,
-         main = "Mapping Results")
-
-## Create a new data frame containing the unmapped proteins as well
-# Create a new data frame with the unmapped proteins
-unmapped_proteins = data.frame(From = setdiff(Vector_ProteinIDs_Acc_Imp2, Data_Mapping_Imp2$From),
-                                To.x = NA, To.y = NA,
-                                EMBL_mapped = FALSE, Entrez_mapped = FALSE)
-
-# Combine the additional proteins with the existing mapping data
-Data_Mapping_All_Imp2 = rbind(Data_Mapping_Imp2, unmapped_proteins)
-
-# Generate logical columns indicating if a protein is mapped in each method
-Data_Mapping_All_Imp2$EMBL_mapped = !is.na(Data_Mapping_All_Imp2$To.x)
-Data_Mapping_All_Imp2$Entrez_mapped = !is.na(Data_Mapping_All_Imp2$To.y)
-
-rm(unmapped_proteins)
-
-# Draw another heatmap, which includes unmapped proteins
-mapped_both = sum(Data_Mapping_All_Imp2$EMBL_mapped & Data_Mapping_All_Imp2$Entrez_mapped)
-mapped_embl_only = sum(Data_Mapping_All_Imp2$EMBL_mapped & !Data_Mapping_All_Imp2$Entrez_mapped)
-mapped_entrez_only = sum(!Data_Mapping_All_Imp2$EMBL_mapped & Data_Mapping_All_Imp2$Entrez_mapped)
-not_mapped = sum(!Data_Mapping_All_Imp2$EMBL_mapped & !Data_Mapping_All_Imp2$Entrez_mapped)
-
-Matrix_Overlap_All_Imp2 = matrix(
-  c(mapped_both, mapped_embl_only, mapped_entrez_only, not_mapped),
-  nrow = 2, ncol = 2, byrow = TRUE,
-  dimnames = list(c("EMBL", "Entrez"), c("Mapped", "Not Mapped"))
-)
-
-rm(mapped_both)
-rm(mapped_embl_only)
-rm(mapped_entrez_only)
-rm(not_mapped)
-
-# Draw the heatmap
-Plot_Heat_Mapping_All_Imp2 = pheatmap(Matrix_Overlap_All_Imp2, 
-         color = c("white", "skyblue"),
-         cluster_rows = FALSE, cluster_cols = FALSE,
-         border_color = NA,
-         main = "Mapping Results")
-
-
-
+Plot_UpSet_Imp2 = upset(fromList(Data_UpSet_Imp2$MappingStatus), order.by = "freq", main.bar.color = "skyblue")
 
 #### Recovering unmapped proteins preparation ####
 ## Some accession numbers couldn't be converted, so the unmapped accession numbers will be extracted, and pBLAST will be used to find similar proteins form Lactobacillus
@@ -1481,90 +1535,13 @@ dev.off()
 
 
 #### Draw the heatmaps with gene ontology data ####
-### The function: Heatmap generation with the ComplexHeatmap package
-Function_drawHeatmap_Complex = function(data, ANOVA_output) {
-  ## Data preparation
-  # Create a new column for the accession numbers needed for the analysis
-  data$Accession = rownames(data)
-  
-  # Move the column to the beginning, removing the copy and the row names.
-  rownames(data) = NULL
-  data = data[, c("Accession", names(data)[-ncol(data)])]
-  
-  # Convert the data frame to a long format
-  data_long = Function_makeLong(data, exclude_columns = "Accession")
-  
-  # Separate the variable column into 3
-  data_long = separate(data_long, variable, c("variable_type", "sensitivity_type", "replicate"))
-  
-  # Set the data types
-  data_long$variable_type = as.factor(data_long$variable_type)
-  data_long$sensitivity_type = as.factor(data_long$sensitivity_type)
-  data_long$intensity = as.numeric(data_long$value)
-  data_long$replicate = as.factor(data_long$replicate)
-  
-  ## Heatmap data prep
-  # Create a vector containing the accession numbers of the significant proteins
-  Sign_Prot = ANOVA_output$Data_ANOVA_signProteins$Accession
-  
-  # Subset the intensity data frame to retain only significant proteins
-  sub_data = subset(data_long, Accession %in% Sign_Prot)
-  
-  # Convert the intensities to log2 to decrease variance between samples
-  sub_data$log2_intensity = log2(sub_data$intensity)
-  
-  # Calculate the overall mean of all the significant protein intensities individually
-  Data_meanSD = aggregate(log2_intensity ~ Accession, data = sub_data, FUN = mean)
-  colnames(Data_meanSD)[2] = "overall_mean"
-  
-  # Calculate the standard deviation for each mean and add it to the data frame
-  data_sd = aggregate(log2_intensity ~ Accession, data = sub_data, FUN = sd)
-  colnames(data_sd)[2] = "overall_sd"
-  Data_meanSD = merge(Data_meanSD, data_sd, by = "Accession")
-  
-  # Calculate the z-values
-  Data_heatmap = data.frame(sub_data, z_value = (sub_data$log2_intensity - Data_meanSD$overall_mean[match(sub_data$Accession, Data_meanSD$Accession)]) / Data_meanSD$overall_sd[match(sub_data$Accession, Data_meanSD$Accession)])
-  
-  # Ensure the z_value column is numeric
-  Data_heatmap$z_value = as.numeric(as.character(Data_heatmap$z_value))
-  
-  # Select the relevant columns from Data_heatmap
-  rel_col = Data_heatmap[, c("Accession", "variable_type", "sensitivity_type", "replicate", "z_value")]
-  rel_col$z_value = as.numeric(as.character(rel_col$z_value))
-  
-  # Pivot the data to create a matrix with proteins as rows and combinations as columns
-  Matrix_heatmap = reshape2::dcast(rel_col, Accession ~ variable_type + sensitivity_type + replicate, 
-                         value.var = "z_value")
-  
-  # Convert the 'accession' column into row names and delete the column
-  rownames(Matrix_heatmap) = Matrix_heatmap$Accession
-  Matrix_heatmap$Accession = NULL
-  
-  # Convert the matrix to a HeatmapList format
-  Matrix_heatmap = as.matrix(Matrix_heatmap)
-  
-  ## Draw the heatmap
-  # Specify a randomized number to ensure a reproducible heatmap
-  set.seed(12345)
-  
-  # Create the heatmap based on the matrix
-  heat_colors = colorRamp2(c(-3, 0, 3), c("blue", "white", "red"))
-  col_annotation = HeatmapAnnotation(df = data.frame(replicate = unique(rel_col$replicate)), 
-                                     col = list(replicate = c("1" = "blue", "2" = "green", "3" = "red")))
-  
-  Plot_heatmap_complex = Heatmap(Matrix_heatmap, name = "Z-value",
-                     col = heat_colors,
-                     cluster_rows = TRUE, cluster_columns = TRUE,
-                     show_row_names = FALSE)
-  
-  return(Plot_heatmap_complex)
-}
 
 ## Executing the function
-Plot_Heat_Imp2_Full_Complex = Function_drawHeatmap_Complex(Data_Imp2_Mean, Output_ANOVA_Imp2)
+Plot_Heat_Imp2_Full_Complex = Function_drawHeatmap_Complex(Data_Imp2_Mean, Output_ANOVA_Imp2, title = "Heatmap of Z-values for proteins processed by method 2, using ComplexHeatmap", fontsize = 2)
 
 ## Save the heatmap as a PNG
-ggsave("HeatmapGO_Imp2.png", plot = Plot_HeatGO_Imp2_Full,
+Plot_Heat_Imp2_Full_Complex = ggplotify::as.ggplot(Plot_Heat_Imp2_Full_Complex)
+ggsave("HeatmapGO_Imp2.png", plot = Plot_Heat_Imp2_Full_Complex,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
 
