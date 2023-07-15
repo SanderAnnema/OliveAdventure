@@ -33,6 +33,8 @@ library(clusterProfiler)
 library(R.utils)
 library(UniprotR)
 library(UpSetR)
+library(ComplexHeatmap)
+library(circlize)
 
 # Setting the working directory
 setwd("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New")
@@ -1479,11 +1481,93 @@ dev.off()
 
 
 #### Draw the heatmaps with gene ontology data ####
-Plot_HeatGO_Imp2_Full = Function_drawHeatmap_GO(Data_Imp2_Mean, Output_ANOVA_Imp2, Data_GO_Full_Imp2, title = "Heatmap depicting z-values of proteins with imputed data (method 2) and added GO data", fontsize_rows = 2)
+### The function: Heatmap generation with the ComplexHeatmap package
+Function_drawHeatmap_Complex = function(data, ANOVA_output) {
+  ## Data preparation
+  # Create a new column for the accession numbers needed for the analysis
+  data$Accession = rownames(data)
+  
+  # Move the column to the beginning, removing the copy and the row names.
+  rownames(data) = NULL
+  data = data[, c("Accession", names(data)[-ncol(data)])]
+  
+  # Convert the data frame to a long format
+  data_long = Function_makeLong(data, exclude_columns = "Accession")
+  
+  # Separate the variable column into 3
+  data_long = separate(data_long, variable, c("variable_type", "sensitivity_type", "replicate"))
+  
+  # Set the data types
+  data_long$variable_type = as.factor(data_long$variable_type)
+  data_long$sensitivity_type = as.factor(data_long$sensitivity_type)
+  data_long$intensity = as.numeric(data_long$value)
+  data_long$replicate = as.factor(data_long$replicate)
+  
+  ## Heatmap data prep
+  # Create a vector containing the accession numbers of the significant proteins
+  Sign_Prot = ANOVA_output$Data_ANOVA_signProteins$Accession
+  
+  # Subset the intensity data frame to retain only significant proteins
+  sub_data = subset(data_long, Accession %in% Sign_Prot)
+  
+  # Convert the intensities to log2 to decrease variance between samples
+  sub_data$log2_intensity = log2(sub_data$intensity)
+  
+  # Calculate the overall mean of all the significant protein intensities individually
+  Data_meanSD = aggregate(log2_intensity ~ Accession, data = sub_data, FUN = mean)
+  colnames(Data_meanSD)[2] = "overall_mean"
+  
+  # Calculate the standard deviation for each mean and add it to the data frame
+  data_sd = aggregate(log2_intensity ~ Accession, data = sub_data, FUN = sd)
+  colnames(data_sd)[2] = "overall_sd"
+  Data_meanSD = merge(Data_meanSD, data_sd, by = "Accession")
+  
+  # Calculate the z-values
+  Data_heatmap = data.frame(sub_data, z_value = (sub_data$log2_intensity - Data_meanSD$overall_mean[match(sub_data$Accession, Data_meanSD$Accession)]) / Data_meanSD$overall_sd[match(sub_data$Accession, Data_meanSD$Accession)])
+  
+  # Ensure the z_value column is numeric
+  Data_heatmap$z_value = as.numeric(as.character(Data_heatmap$z_value))
+  
+  # Select the relevant columns from Data_heatmap
+  rel_col = Data_heatmap[, c("Accession", "variable_type", "sensitivity_type", "replicate", "z_value")]
+  rel_col$z_value = as.numeric(as.character(rel_col$z_value))
+  
+  # Pivot the data to create a matrix with proteins as rows and combinations as columns
+  Matrix_heatmap = reshape2::dcast(rel_col, Accession ~ variable_type + sensitivity_type + replicate, 
+                         value.var = "z_value")
+  
+  # Convert the 'accession' column into row names and delete the column
+  rownames(Matrix_heatmap) = Matrix_heatmap$Accession
+  Matrix_heatmap$Accession = NULL
+  
+  # Convert the matrix to a HeatmapList format
+  Matrix_heatmap = as.matrix(Matrix_heatmap)
+  
+  ## Draw the heatmap
+  # Specify a randomized number to ensure a reproducible heatmap
+  set.seed(12345)
+  
+  # Create the heatmap based on the matrix
+  heat_colors = colorRamp2(c(-3, 0, 3), c("blue", "white", "red"))
+  col_annotation = HeatmapAnnotation(df = data.frame(replicate = unique(rel_col$replicate)), 
+                                     col = list(replicate = c("1" = "blue", "2" = "green", "3" = "red")))
+  
+  Plot_heatmap_complex = Heatmap(Matrix_heatmap, name = "Z-value",
+                     col = heat_colors,
+                     cluster_rows = TRUE, cluster_columns = TRUE,
+                     show_row_names = FALSE)
+  
+  return(Plot_heatmap_complex)
+}
+
+## Executing the function
+Plot_Heat_Imp2_Full_Complex = Function_drawHeatmap_Complex(Data_Imp2_Mean, Output_ANOVA_Imp2)
 
 ## Save the heatmap as a PNG
 ggsave("HeatmapGO_Imp2.png", plot = Plot_HeatGO_Imp2_Full,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
+
+
 
 
 #### Using gProfiler for gene enrichment !!! DOESN'T WORK !!! ####
