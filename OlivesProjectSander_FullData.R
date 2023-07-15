@@ -1296,25 +1296,38 @@ Vector_ProteinIDs_Imp2_EMBL_UniP = Data_AccMapping_Imp2_EMBL_unique$From
 Vector_ProteinIDs_Imp2_Entrez_UniP = Data_AccMapping_Imp2_Entrez$From
 
 ## Visualize the mapping !!! WORKING ON THIS !!!
-# Merge the mapping results
 Data_Mapping_Imp2 = merge(Data_AccMapping_Imp2_EMBL_unique, Data_AccMapping_Imp2_Entrez, by = "From", all = TRUE)
 
 # Create a logical column indicating if a protein is mapped in each method
 Data_Mapping_Imp2$EMBL_mapped = !is.na(Data_Mapping_Imp2$To.x)
 Data_Mapping_Imp2$Entrez_mapped = !is.na(Data_Mapping_Imp2$To.y)
 
-# Create the UpSet plot
-Data_UpSet_Imp2 = Data_Mapping_Imp2 %>%
-  mutate(MappingStatus = case_when(
-    EMBL_mapped & Entrez_mapped ~ "Both",
-    EMBL_mapped ~ "EMBL",
-    Entrez_mapped ~ "Entrez",
-    TRUE ~ "None"
-  )) %>%
-  count(MappingStatus) %>%
-  filter(MappingStatus != "None")
+# Create a new data frame containing proteins that were unsuccessfully mapped to both EMBL and Entrez
+unmapped_both <- Data_Mapping_Imp2 %>% filter(!EMBL_mapped & !Entrez_mapped)
 
-Plot_UpSet_Imp2 = upset(fromList(Data_UpSet_Imp2$MappingStatus), order.by = "freq", main.bar.color = "skyblue")
+# Combine the additional proteins with the existing mapping data
+Data_Mapping_All_Imp2 <- rbind(Data_Mapping_Imp2, unmapped_both)
+
+# Create a new column to indicate the mapping status as numerical values
+Data_Mapping_All_Imp2$Mapped <- ifelse(Data_Mapping_All_Imp2$EMBL_mapped & Data_Mapping_All_Imp2$Entrez_mapped, 2,
+                                       ifelse(Data_Mapping_All_Imp2$EMBL_mapped | Data_Mapping_All_Imp2$Entrez_mapped, 1, 0))
+
+# Order the mapping status for correct visualization in the plot
+Data_Mapping_All_Imp2$MappingStatus <- factor(Data_Mapping_All_Imp2$MappingStatus, levels = c("None", "One", "Both"))
+
+# Create a grouped bar plot
+Plot_GrBar_Mapping_Imp2 = ggplot(Data_Mapping_All_Imp2, aes(x = From, y = Mapped, fill = MappingStatus)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  labs(title = "Mapping Results",
+       x = "Protein Accession",
+       y = "Mapped",
+       fill = "Mapping Status") +
+  scale_fill_manual(values = c("None" = "white", "One" = "skyblue", "Both" = "lightgreen")) +
+  theme_minimal()
+
+# Save the plot
+Function_savePlot(Plot_GrBar_Mapping_Imp2, "Plot_GrBar_Mapping_Imp2.png", plotType = "histogram")
+
 
 #### Recovering unmapped proteins preparation ####
 ## Some accession numbers couldn't be converted, so the unmapped accession numbers will be extracted, and pBLAST will be used to find similar proteins form Lactobacillus
