@@ -405,6 +405,47 @@ Function_drawHeatmap = function(data, ANOVA_output, title = title, fontsize_rows
   return(Plot_heatmap)
 }
 
+### Heatmap generation with gene ontology
+Function_drawHeatmap_GO = function(data, ANOVA_output, GO_data, title = "Heatmap with GO Annotations", fontsize_rows = 2) {
+  library(reshape2)
+  
+  ## Data preparation
+  data$Accession = rownames(data)
+  rownames(data) = NULL
+  data = data[, c("Accession", names(data)[-ncol(data)])]
+  
+  ## Heatmap data prep
+  Data_long = Function_makeLong(data, exclude_columns = "Accession")
+  Data_long = separate(Data_long, variable, c("variable_type", "sensitivity_type", "replicate"))
+  Data_long$variable_type = as.factor(Data_long$variable_type)
+  Data_long$sensitivity_type = as.factor(Data_long$sensitivity_type)
+  Data_long$intensity = as.numeric(Data_long$value)
+  Data_long$replicate = as.factor(Data_long$replicate)
+  
+  ## Add GO annotations to the heatmap data
+  significant_proteins = ANOVA_output$Data_ANOVA_signProteins$Accession
+  GO_annotations = subset(GO_data, Accession %in% significant_proteins)
+  GO_merged = merge(Data_long, GO_annotations, by = "Accession", all.x = TRUE)
+  
+  Matrix_heatmap = dcast(GO_merged, Accession ~ variable_type + sensitivity_type + replicate, value.var = "intensity")
+  Matrix_heatmap$GO_terms = GO_merged$Gene.Ontology.IDs  # Add GO terms as a new column
+  
+  ## Draw the heatmap with GO annotations
+  set.seed(12345)
+  Plot_heatmap = pheatmap(Matrix_heatmap[, -1],  # Exclude the Accession column
+                           clustering_distance_rows = "euclidean",
+                           clustering_distance_cols = "euclidean",
+                           main = title,
+                           fontsize_row = fontsize_rows)
+  
+  ## Annotate the heatmap with GO terms
+  go_terms = as.character(Matrix_heatmap$GO_terms)
+  rownames(Plot_heatmap$tree_row) = paste0(go_terms, "\n", rownames(Plot_heatmap$tree_row))
+  Plot_heatmap$row_labels = gsub(".*\n", "", Plot_heatmap$row_labels)
+  
+  return(Plot_heatmap)
+}
+
 ### Q-Q plot calculation for intensities
 # Requires as input a long format and log2(intensity)
 Function_calcQQ_int = function(data, title) {
@@ -962,6 +1003,13 @@ Function_savePlot(Plot_Box_Imp2_Mean, "IntensDistrib_Box_Imp2_Mean.png", plotTyp
 
 #### 2-way ANOVA of the Imp2 dataset ####
 ### Differential expression analysis with a 2-way ANOVA between controls and treated samples
+# Rename the accession numbers to the shortened version
+Vector_Temp = rownames(Data_Imp2_Mean)
+Vector_Temp = sub("^[^|]*\\|[^|]*\\|(.*)", "\\1", Vector_Temp)
+Vector_Temp = gsub("_LACPE$", "", Vector_Temp)
+rownames(Data_Imp2_Mean) = Vector_Temp
+rm(Vector_Temp)
+
 ## Perform the 2-way ANOVA with p-value adjustment
 Output_ANOVA_Imp2 = Function_performANOVA(Data_Imp2_Mean, p_value = 0.01)
 
@@ -1102,56 +1150,57 @@ Table_ProtRetent = data.frame(Method = c("NoZero", "Imp1", "Imp2", "Imp3"),
 
 
 #### !!!! BEGINNING OF GENE ENRICHMENT ANALYSIS !!!! ####
-# The proteins found in whatever data processing method is used above will be analysed using gProfiler, which requires extraction of the accession numbers of the remaining proteins, and conversion into gene IDs.
+# The proteins found in whatever data processing method is used above were to be processed with gene enrichment, which involves conversion to gene IDs. The following steps are this conversion, followed by GO analysis and visualization. The actual enrichment I didn't get to work yet.
+# Right now I'm processing the Imp2 dataset, since that one is the most intelligently imputed.
 
 #### Accession number extraction and gene ID conversion using UniProt ####
 ## Prepare data
 # Make a vector of protein IDs to be converted
-Vector_ProteinIDs_Acc_Imp3 = rownames(Data_Imp3_Mean)
+Vector_ProteinIDs_Acc_Imp2 = rownames(Data_Imp2_Mean)
 
 # Extract only the relevant section of the accession number. So only the part after the second '|' symbol.
-Vector_ProteinIDs_Acc_Imp3 = sub("^[^|]*\\|[^|]*\\|(.*)", "\\1", Vector_ProteinIDs_Acc_Imp3)
+Vector_ProteinIDs_Acc_Imp2 = sub("^[^|]*\\|[^|]*\\|(.*)", "\\1", Vector_ProteinIDs_Acc_Imp2)
 
 ## Convert the accession numbers to entrez-, EMBL- and KEGG gene IDs 
 # Perform the conversion
-Data_AccMapping_Imp3_EMBL = mapUniProt(from = "UniProtKB_AC-ID", to = 'EMBL-GenBank-DDBJ', query = Vector_ProteinIDs_Acc_Imp3)
-Data_AccMapping_Imp3_Entrez = mapUniProt(from = "UniProtKB_AC-ID", to = 'GeneID', query = Vector_ProteinIDs_Acc_Imp3)
+Data_AccMapping_Imp2_EMBL = mapUniProt(from = "UniProtKB_AC-ID", to = 'EMBL-GenBank-DDBJ', query = Vector_ProteinIDs_Acc_Imp2)
+Data_AccMapping_Imp2_Entrez = mapUniProt(from = "UniProtKB_AC-ID", to = 'GeneID', query = Vector_ProteinIDs_Acc_Imp2)
 
-# Perform the conversion for the KEGG format. This one takes way too long, as I stopped my attempt at 03:33:33. It works I think, but it's easier to manually run it in the web tool at https://www.uniprot.org/id-mapping
-# Data_AccMapping_Imp3_KEGG = mapUniProt(from = "UniProtKB_AC-ID", to = 'KEGG', query = Vector_ProteinIDs_Acc_Imp3)
+# Perform the conversion for the KEGG format. This one takes way too long, as I stopped my attempt at 03:33:33. It is needed for the gene enrichment with clusterProfiler, but even manually adding it to the online converter doesn't work. This is the part I can't figure out.
+# Data_AccMapping_Imp2_KEGG = mapUniProt(from = "UniProtKB_AC-ID", to = 'KEGG', query = Vector_ProteinIDs_Acc_Imp2)
 
 # Loading the KEGG conversion data from the manual conversion
-Data_AccMapping_Imp3_KEGG = NULL
+Data_AccMapping_Imp2_KEGG = NULL
 
 # Since there were multiple gene IDs found per accession number, the data needs to be trimmed. I will take only the first gene ID found per accession number
-Data_AccMapping_Imp3_EMBL_unique = Data_AccMapping_Imp3_EMBL %>%
+Data_AccMapping_Imp2_EMBL_unique = Data_AccMapping_Imp2_EMBL %>%
   group_by(From) %>%
   filter(row_number() == 1) %>%
   ungroup()
 
 # Extract the protein IDs as a vector
-Vector_ProteinIDs_Imp3_EMBL = Data_AccMapping_Imp3_EMBL_unique$To
-Vector_ProteinIDs_Imp3_Entrez = Data_AccMapping_Imp3_Entrez$To
+Vector_ProteinIDs_Imp2_EMBL = Data_AccMapping_Imp2_EMBL_unique$To
+Vector_ProteinIDs_Imp2_Entrez = Data_AccMapping_Imp2_Entrez$To
 
 # Also extract the correctly mapped protein IDs in the UniProt format
-Vector_ProteinIDs_Imp3_EMBL_UniP = Data_AccMapping_Imp3_EMBL_unique$From
-Vector_ProteinIDs_Imp3_Entrez_UniP = Data_AccMapping_Imp3_Entrez$From
+Vector_ProteinIDs_Imp2_EMBL_UniP = Data_AccMapping_Imp2_EMBL_unique$From
+Vector_ProteinIDs_Imp2_Entrez_UniP = Data_AccMapping_Imp2_Entrez$From
 
 ## Visualize the mapping
 # Merge the mapping results
-Data_Mapping = merge(Data_AccMapping_Imp3_EMBL_unique, Data_AccMapping_Imp3_Entrez, by = "From", all = TRUE)
+Data_Mapping_Imp2 = merge(Data_AccMapping_Imp2_EMBL_unique, Data_AccMapping_Imp2_Entrez, by = "From", all = TRUE)
 
 # Create a logical column indicating if a protein is mapped in each method
-Data_Mapping$EMBL_mapped = !is.na(Data_Mapping$To.x)
-Data_Mapping$Entrez_mapped = !is.na(Data_Mapping$To.y)
+Data_Mapping_Imp2$EMBL_mapped = !is.na(Data_Mapping_Imp2$To.x)
+Data_Mapping_Imp2$Entrez_mapped = !is.na(Data_Mapping_Imp2$To.y)
 
 # Generate an overlap matrix
-mapped_both = sum(Data_Mapping$EMBL_mapped & Data_Mapping$Entrez_mapped)
-mapped_embl_only = sum(Data_Mapping$EMBL_mapped & !Data_Mapping$Entrez_mapped)
-mapped_entrez_only = sum(!Data_Mapping$EMBL_mapped & Data_Mapping$Entrez_mapped)
-not_mapped = sum(!Data_Mapping$EMBL_mapped & !Data_Mapping$Entrez_mapped)
+mapped_both = sum(Data_Mapping_Imp2$EMBL_mapped & Data_Mapping_Imp2$Entrez_mapped)
+mapped_embl_only = sum(Data_Mapping_Imp2$EMBL_mapped & !Data_Mapping_Imp2$Entrez_mapped)
+mapped_entrez_only = sum(!Data_Mapping_Imp2$EMBL_mapped & Data_Mapping_Imp2$Entrez_mapped)
+not_mapped = sum(!Data_Mapping_Imp2$EMBL_mapped & !Data_Mapping_Imp2$Entrez_mapped)
 
-Matrix_Overlap = matrix(
+Matrix_Overlap_Imp2 = matrix(
   c(mapped_both, mapped_embl_only, mapped_entrez_only, not_mapped),
   nrow = 2, ncol = 2, byrow = TRUE,
   dimnames = list(c("EMBL", "Entrez"), c("Mapped", "Not Mapped"))
@@ -1163,7 +1212,7 @@ rm(mapped_entrez_only)
 rm(not_mapped)
 
 # Draw the heatmap
-Plot_Heat_Mapping = pheatmap(Matrix_Overlap, 
+Plot_Heat_Mapping_Imp2 = pheatmap(Matrix_Overlap_Imp2, 
          color = c("white", "skyblue"),
          cluster_rows = FALSE, cluster_cols = FALSE,
          border_color = NA,
@@ -1171,26 +1220,26 @@ Plot_Heat_Mapping = pheatmap(Matrix_Overlap,
 
 ## Create a new data frame containing the unmapped proteins as well
 # Create a new data frame with the unmapped proteins
-unmapped_proteins = data.frame(From = setdiff(Vector_ProteinIDs_Acc_Imp3, Data_Mapping$From),
+unmapped_proteins = data.frame(From = setdiff(Vector_ProteinIDs_Acc_Imp2, Data_Mapping_Imp2$From),
                                 To.x = NA, To.y = NA,
                                 EMBL_mapped = FALSE, Entrez_mapped = FALSE)
 
 # Combine the additional proteins with the existing mapping data
-Data_Mapping_All = rbind(Data_Mapping, unmapped_proteins)
+Data_Mapping_All_Imp2 = rbind(Data_Mapping_Imp2, unmapped_proteins)
 
 # Generate logical columns indicating if a protein is mapped in each method
-Data_Mapping_All$EMBL_mapped = !is.na(Data_Mapping_All$To.x)
-Data_Mapping_All$Entrez_mapped = !is.na(Data_Mapping_All$To.y)
+Data_Mapping_All_Imp2$EMBL_mapped = !is.na(Data_Mapping_All_Imp2$To.x)
+Data_Mapping_All_Imp2$Entrez_mapped = !is.na(Data_Mapping_All_Imp2$To.y)
 
 rm(unmapped_proteins)
 
 # Draw another heatmap, which includes unmapped proteins
-mapped_both = sum(Data_Mapping_All$EMBL_mapped & Data_Mapping_All$Entrez_mapped)
-mapped_embl_only = sum(Data_Mapping_All$EMBL_mapped & !Data_Mapping_All$Entrez_mapped)
-mapped_entrez_only = sum(!Data_Mapping_All$EMBL_mapped & Data_Mapping_All$Entrez_mapped)
-not_mapped = sum(!Data_Mapping_All$EMBL_mapped & !Data_Mapping_All$Entrez_mapped)
+mapped_both = sum(Data_Mapping_All_Imp2$EMBL_mapped & Data_Mapping_All_Imp2$Entrez_mapped)
+mapped_embl_only = sum(Data_Mapping_All_Imp2$EMBL_mapped & !Data_Mapping_All_Imp2$Entrez_mapped)
+mapped_entrez_only = sum(!Data_Mapping_All_Imp2$EMBL_mapped & Data_Mapping_All_Imp2$Entrez_mapped)
+not_mapped = sum(!Data_Mapping_All_Imp2$EMBL_mapped & !Data_Mapping_All_Imp2$Entrez_mapped)
 
-Matrix_Overlap_All = matrix(
+Matrix_Overlap_All_Imp2 = matrix(
   c(mapped_both, mapped_embl_only, mapped_entrez_only, not_mapped),
   nrow = 2, ncol = 2, byrow = TRUE,
   dimnames = list(c("EMBL", "Entrez"), c("Mapped", "Not Mapped"))
@@ -1202,7 +1251,7 @@ rm(mapped_entrez_only)
 rm(not_mapped)
 
 # Draw the heatmap
-Plot_Heat_Mapping_All = pheatmap(Matrix_Overlap_All, 
+Plot_Heat_Mapping_All_Imp2 = pheatmap(Matrix_Overlap_All_Imp2, 
          color = c("white", "skyblue"),
          cluster_rows = FALSE, cluster_cols = FALSE,
          border_color = NA,
@@ -1217,11 +1266,11 @@ Plot_Heat_Mapping_All = pheatmap(Matrix_Overlap_All,
 
 ### Prepare the data
 ## Extract the accession numbers that couldn't be mapped
-Vector_UnmappedAcc_Imp3_EMBL = setdiff(Vector_ProteinIDs_Acc_Imp3, 
-                                  unique(Data_AccMapping_Imp3_EMBL$From))
+Vector_UnmappedAcc_Imp2_EMBL = setdiff(Vector_ProteinIDs_Acc_Imp2, 
+                                  unique(Data_AccMapping_Imp2_EMBL$From))
 
-Vector_UnmappedAcc_Imp3_Entrez = setdiff(Vector_ProteinIDs_Acc_Imp3, 
-                                       unique(Data_AccMapping_Imp3_Entrez$From))
+Vector_UnmappedAcc_Imp2_Entrez = setdiff(Vector_ProteinIDs_Acc_Imp2, 
+                                       unique(Data_AccMapping_Imp2_Entrez$From))
 
 ## Prepare the protein sequence data
 # Read the FASTA file
@@ -1275,9 +1324,9 @@ rm(Temp_AccNumb)
 rm(Temp_Seq)
 
 # Subset the FASTA file to extract only the protein sequences of proteins found in the vector of unmapped proteins
-Data_proteinFASTA_AllExp = FASTA_AllProteins[FASTA_AllProteins$Accession %in% Vector_ProteinIDs_Acc_Imp3, ]
-Data_proteinFASTA_unmapped_EMBL = FASTA_AllProteins[FASTA_AllProteins$Accession %in% Vector_UnmappedAcc_Imp3_EMBL, ]
-Data_proteinFASTA_unmapped_Entrez = FASTA_AllProteins[FASTA_AllProteins$Accession %in% Vector_UnmappedAcc_Imp3_Entrez, ]
+Data_proteinFASTA_AllExp = FASTA_AllProteins[FASTA_AllProteins$Accession %in% Vector_ProteinIDs_Acc_Imp2, ]
+Data_proteinFASTA_unmapped_EMBL = FASTA_AllProteins[FASTA_AllProteins$Accession %in% Vector_UnmappedAcc_Imp2_EMBL, ]
+Data_proteinFASTA_unmapped_Entrez = FASTA_AllProteins[FASTA_AllProteins$Accession %in% Vector_UnmappedAcc_Imp2_Entrez, ]
 
 
 ### Return the subsetted data frame of the fasta data to a fasta format
@@ -1380,53 +1429,61 @@ for (i in 1:nrow(Data_proteinFASTA_unmapped_Entrez)) {
 #### Using uniprotR for gene ontology mapping ####
 ## Prepare the data
 # Generate a vector lacking the suffix '_LACPE'
-Vector_ProteinIDs_Acc_Imp3_Full_Trim = gsub("_LACPE$", "", Vector_ProteinIDs_Acc_Imp3)
-Vector_ProteinIDs_Acc_Imp3_EMBL_Trim = gsub("_LACPE$", "", Vector_ProteinIDs_Imp3_EMBL_UniP)
-Vector_ProteinIDs_Acc_Imp3_Entrez_Trim = gsub("_LACPE$", "", Vector_ProteinIDs_Imp3_Entrez_UniP)
+Vector_ProteinIDs_Acc_Imp2_Full_Trim = gsub("_LACPE$", "", Vector_ProteinIDs_Acc_Imp2)
+Vector_ProteinIDs_Acc_Imp2_EMBL_Trim = gsub("_LACPE$", "", Vector_ProteinIDs_Imp2_EMBL_UniP)
+Vector_ProteinIDs_Acc_Imp2_Entrez_Trim = gsub("_LACPE$", "", Vector_ProteinIDs_Imp2_Entrez_UniP)
 
 # Retrieve protein gene ontology data
-Data_GO_Full = GetProteinGOInfo(Vector_ProteinIDs_Acc_Imp3_Full_Trim, directorypath = NULL)
-Data_GO_EMBL = GetProteinGOInfo(Vector_ProteinIDs_Acc_Imp3_EMBL_Trim, directorypath = NULL)
-Data_GO_Entrez = GetProteinGOInfo(Vector_ProteinIDs_Acc_Imp3_Entrez_Trim, directorypath = NULL)
+Data_GO_Full_Imp2 = GetProteinGOInfo(Vector_ProteinIDs_Acc_Imp2_Full_Trim, directorypath = NULL)
+Data_GO_EMBL_Imp2 = GetProteinGOInfo(Vector_ProteinIDs_Acc_Imp2_EMBL_Trim, directorypath = NULL)
+Data_GO_Entrez_Imp2 = GetProteinGOInfo(Vector_ProteinIDs_Acc_Imp2_Entrez_Trim, directorypath = NULL)
 
 ## Visualize the data
 # Plot the subcellular functions of the retrieved GO data
-Plot_GO_Subs_Full = Plot.GOSubCellular(Data_GO_Full, Top = 10, directorypath = NULL)
-Plot_GO_Subs_EMBL = Plot.GOSubCellular(Data_GO_EMBL, Top = 10, directorypath = NULL)
-Plot_GO_Subs_Entrez = Plot.GOSubCellular(Data_GO_Entrez, Top = 10, directorypath = NULL)
+Plot_GO_Subs_Full_Imp2 = Plot.GOSubCellular(Data_GO_Full_Imp2, Top = 10, directorypath = NULL)
+Plot_GO_Subs_EMBL_Imp2 = Plot.GOSubCellular(Data_GO_EMBL_Imp2, Top = 10, directorypath = NULL)
+Plot_GO_Subs_Entrez_Imp2 = Plot.GOSubCellular(Data_GO_Entrez_Imp2, Top = 10, directorypath = NULL)
 
 # Save the plots
-pdf("Plot_GO_Subs_Full.pdf", width = 8, height = 6)
-print(Plot_GO_Subs_Full)
+pdf("Plot_GO_Subs_Full_Imp2.pdf", width = 8, height = 6)
+print(Plot_GO_Subs_Full_Imp2)
 dev.off()
 
-pdf("Plot_GO_Subs_EMBL.pdf", width = 8, height = 6)
-print(Plot_GO_Subs_EMBL)
+pdf("Plot_GO_Subs_EMBL_Imp2.pdf", width = 8, height = 6)
+print(Plot_GO_Subs_EMBL_Imp2)
 dev.off()
 
-pdf("Plot_GO_Subs_Entrez.pdf", width = 8, height = 6)
-print(Plot_GO_Subs_Entrez)
+pdf("Plot_GO_Subs_Entrez_Imp2.pdf", width = 8, height = 6)
+print(Plot_GO_Subs_Entrez_Imp2)
 dev.off()
 
 # Plot the molecular functions of the retrieved GO data
-Plot_GO_Mol_Full = Plot.GOMolecular(Data_GO_Full, Top = 10, directorypath = NULL)
-Plot_GO_Mol_EMBL = Plot.GOMolecular(Data_GO_EMBL, Top = 10, directorypath = NULL)
-Plot_GO_Mol_Entrez = Plot.GOMolecular(Data_GO_Entrez, Top = 10, directorypath = NULL)
+Plot_GO_Mol_Full_Imp2 = Plot.GOMolecular(Data_GO_Full_Imp2, Top = 10, directorypath = NULL)
+Plot_GO_Mol_EMBL_Imp2 = Plot.GOMolecular(Data_GO_EMBL_Imp2, Top = 10, directorypath = NULL)
+Plot_GO_Mol_Entrez_Imp2 = Plot.GOMolecular(Data_GO_Entrez_Imp2, Top = 10, directorypath = NULL)
 
 # Save the plots
-pdf("Plot_GO_Mol_Full.pdf", width = 8, height = 6)
-print(Plot_GO_Mol_Full)
+pdf("Plot_GO_Mol_Full_Imp2.pdf", width = 8, height = 6)
+print(Plot_GO_Mol_Full_Imp2)
 dev.off()
 
-pdf("Plot_GO_Mol_EMBL.pdf", width = 8, height = 6)
-print(Plot_GO_Mol_EMBL)
+pdf("Plot_GO_Mol_EMBL_Imp2.pdf", width = 8, height = 6)
+print(Plot_GO_Mol_EMBL_Imp2)
 dev.off()
 
-pdf("Plot_GO_Mol_Entrez.pdf", width = 8, height = 6)
-print(Plot_GO_Mol_Entrez)
+pdf("Plot_GO_Mol_Entrez_Imp2.pdf", width = 8, height = 6)
+print(Plot_GO_Mol_Entrez_Imp2)
 dev.off()
 
 
+
+
+#### Draw the heatmaps with gene ontology data ####
+Plot_HeatGO_Imp2_Full = Function_drawHeatmap_GO(Data_Imp2_Mean, Output_ANOVA_Imp2, Data_GO_Full_Imp2, title = "Heatmap depicting z-values of proteins with imputed data (method 2) and added GO data", fontsize_rows = 2)
+
+## Save the heatmap as a PNG
+ggsave("HeatmapGO_Imp2.png", plot = Plot_HeatGO_Imp2_Full,
+       scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
 
 
 #### Using gProfiler for gene enrichment !!! DOESN'T WORK !!! ####
