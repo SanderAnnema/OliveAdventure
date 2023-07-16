@@ -36,6 +36,8 @@ library(UpSetR)
 library(ComplexHeatmap)
 library(circlize)
 library(ggplotify)
+library(dendextend)
+library(stringr)
 
 # Setting the working directory
 setwd("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New")
@@ -1255,6 +1257,17 @@ Table_ProtRetent = data.frame(Method = c("NoZero", "Imp1", "Imp2", "Imp3"),
                                              nrow(Data_Imp2) / nrow(ProtTab_ANorm) * 100, 
                                              nrow(Data_Imp3) / nrow(ProtTab_ANorm) * 100))
 
+# Plot the table
+Plot_Bar_ProtRetent = ggplot(Table_ProtRetent, aes(x = Method, y = Percentage_retained)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "Retention Percentage by Method",
+       x = "Method",
+       y = "Percentage Retained")
+
+
+# Save the plot
+Function_savePlot(Plot_Bar_ProtRetent, "Plot_Bar_ProtRetent.png", "histogram")
+
 
 
 
@@ -1295,38 +1308,47 @@ Vector_ProteinIDs_Imp2_Entrez = Data_AccMapping_Imp2_Entrez$To
 Vector_ProteinIDs_Imp2_EMBL_UniP = Data_AccMapping_Imp2_EMBL_unique$From
 Vector_ProteinIDs_Imp2_Entrez_UniP = Data_AccMapping_Imp2_Entrez$From
 
-## Visualize the mapping !!! WORKING ON THIS !!!
+## Visualize the mapping !!! WORKING ON THIS, MAKES A WEIRD PLOT FOR NOW !!!
 Data_Mapping_Imp2 = merge(Data_AccMapping_Imp2_EMBL_unique, Data_AccMapping_Imp2_Entrez, by = "From", all = TRUE)
 
 # Create a logical column indicating if a protein is mapped in each method
 Data_Mapping_Imp2$EMBL_mapped = !is.na(Data_Mapping_Imp2$To.x)
 Data_Mapping_Imp2$Entrez_mapped = !is.na(Data_Mapping_Imp2$To.y)
 
-# Create a new data frame containing proteins that were unsuccessfully mapped to both EMBL and Entrez
-unmapped_both <- Data_Mapping_Imp2 %>% filter(!EMBL_mapped & !Entrez_mapped)
-
-# Combine the additional proteins with the existing mapping data
-Data_Mapping_All_Imp2 <- rbind(Data_Mapping_Imp2, unmapped_both)
+# Add the unmapped proteins as well
+Temp_newProt = setdiff(Vector_ProteinIDs_Acc_Imp2, Data_Mapping_Imp2$From)
+Tep_newProt = data.frame(
+  From = Temp_newProt,
+  To.x = NA,
+  To.y = NA,
+  EMBL_mapped = FALSE,
+  Entrez_mapped = FALSE,
+  stringsAsFactors = FALSE
+)
+Data_Mapping_All_Imp2 = rbind(Data_Mapping_Imp2, Tep_newProt)
+rm(Temp_newProt)
 
 # Create a new column to indicate the mapping status as numerical values
-Data_Mapping_All_Imp2$Mapped <- ifelse(Data_Mapping_All_Imp2$EMBL_mapped & Data_Mapping_All_Imp2$Entrez_mapped, 2,
+Data_Mapping_All_Imp2$Mapped = ifelse(Data_Mapping_All_Imp2$EMBL_mapped & Data_Mapping_All_Imp2$Entrez_mapped, 2,
                                        ifelse(Data_Mapping_All_Imp2$EMBL_mapped | Data_Mapping_All_Imp2$Entrez_mapped, 1, 0))
 
-# Order the mapping status for correct visualization in the plot
-Data_Mapping_All_Imp2$MappingStatus <- factor(Data_Mapping_All_Imp2$MappingStatus, levels = c("None", "One", "Both"))
+# Add a 'Mapping_Status' column
+Data_Mapping_All_Imp2$Mapping_Status = ifelse(Data_Mapping_All_Imp2$Mapped == 0, "None",
+                                               ifelse(Data_Mapping_All_Imp2$EMBL_mapped & !Data_Mapping_All_Imp2$Entrez_mapped, "EMBL",
+                                                      ifelse(!Data_Mapping_All_Imp2$EMBL_mapped & Data_Mapping_All_Imp2$Entrez_mapped, "Entrez",
+                                                             ifelse(Data_Mapping_All_Imp2$Mapped == 2, "Both", NA))))
 
-# Create a grouped bar plot
-Plot_GrBar_Mapping_Imp2 = ggplot(Data_Mapping_All_Imp2, aes(x = From, y = Mapped, fill = MappingStatus)) +
-  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
-  labs(title = "Mapping Results",
+# Create a stacked bar plot
+Plot_Stack_Mapping_Imp2 = ggplot(Data_Mapping_All_Imp2, aes(x = From)) +
+  geom_bar(aes(fill = Mapping_Status), position = "stack") +
+  scale_fill_manual(values = c("None" = "white", "EMBL" = "blue", "Entrez" = "red", "Both" = c("blue", "red"))) +
+  labs(title = "Mapping Status of Proteins",
        x = "Protein Accession",
-       y = "Mapped",
-       fill = "Mapping Status") +
-  scale_fill_manual(values = c("None" = "white", "One" = "skyblue", "Both" = "lightgreen")) +
+       y = "Status") +
   theme_minimal()
 
 # Save the plot
-Function_savePlot(Plot_GrBar_Mapping_Imp2, "Plot_GrBar_Mapping_Imp2.png", plotType = "histogram")
+Function_savePlot(Plot_Stack_Mapping_Imp2, "Plot_Stack_Mapping_Imp2.png", plotType = "histogram")
 
 
 #### Recovering unmapped proteins preparation ####
@@ -1509,9 +1531,9 @@ Data_GO_Entrez_Imp2 = GetProteinGOInfo(Vector_ProteinIDs_Acc_Imp2_Entrez_Trim, d
 
 ## Visualize the data
 # Plot the subcellular functions of the retrieved GO data
-Plot_GO_Subs_Full_Imp2 = Plot.GOSubCellular(Data_GO_Full_Imp2, Top = 10, directorypath = NULL)
-Plot_GO_Subs_EMBL_Imp2 = Plot.GOSubCellular(Data_GO_EMBL_Imp2, Top = 10, directorypath = NULL)
-Plot_GO_Subs_Entrez_Imp2 = Plot.GOSubCellular(Data_GO_Entrez_Imp2, Top = 10, directorypath = NULL)
+Plot_GO_Subs_Full_Imp2 = Plot.GOSubCellular(Data_GO_Full_Imp2, Top = 15, directorypath = NULL)
+Plot_GO_Subs_EMBL_Imp2 = Plot.GOSubCellular(Data_GO_EMBL_Imp2, Top = 15, directorypath = NULL)
+Plot_GO_Subs_Entrez_Imp2 = Plot.GOSubCellular(Data_GO_Entrez_Imp2, Top = 15, directorypath = NULL)
 
 # Save the plots
 pdf("Plot_GO_Subs_Full_Imp2.pdf", width = 8, height = 6)
@@ -1527,9 +1549,9 @@ print(Plot_GO_Subs_Entrez_Imp2)
 dev.off()
 
 # Plot the molecular functions of the retrieved GO data
-Plot_GO_Mol_Full_Imp2 = Plot.GOMolecular(Data_GO_Full_Imp2, Top = 10, directorypath = NULL)
-Plot_GO_Mol_EMBL_Imp2 = Plot.GOMolecular(Data_GO_EMBL_Imp2, Top = 10, directorypath = NULL)
-Plot_GO_Mol_Entrez_Imp2 = Plot.GOMolecular(Data_GO_Entrez_Imp2, Top = 10, directorypath = NULL)
+Plot_GO_Mol_Full_Imp2 = Plot.GOMolecular(Data_GO_Full_Imp2, Top = 15, directorypath = NULL)
+Plot_GO_Mol_EMBL_Imp2 = Plot.GOMolecular(Data_GO_EMBL_Imp2, Top = 15, directorypath = NULL)
+Plot_GO_Mol_Entrez_Imp2 = Plot.GOMolecular(Data_GO_Entrez_Imp2, Top = 15, directorypath = NULL)
 
 # Save the plots
 pdf("Plot_GO_Mol_Full_Imp2.pdf", width = 8, height = 6)
@@ -1548,9 +1570,129 @@ dev.off()
 
 
 #### Draw the heatmaps with gene ontology data ####
+## Prepare the data of the dendogram
+# Extract the GO terms from the dataset, and only take the first section if it exists
+Vector_GOtermsMol_Full_Imp2 = str_extract(Data_GO_Full_Imp2$Gene.Ontology..molecular.function, "^[^;]+")
+Vector_GOtermsMol_EMBL_Imp2 = str_extract(Data_GO_EMBL_Imp2$Gene.Ontology..molecular.function, "^[^;]+")
+Vector_GOtermsMol_Entrez_Imp2 = str_extract(Data_GO_Entrez_Imp2$Gene.Ontology..molecular.function, "^[^;]+")
+
+# Replace any NA values with "Unknown"
+Vector_GOtermsMol_Full_Imp2[is.na(Vector_GOtermsMol_Full_Imp2)] = "Unknown"
+Vector_GOtermsMol_EMBL_Imp2[is.na(Vector_GOtermsMol_EMBL_Imp2)] = "Unknown"
+Vector_GOtermsMol_Entrez_Imp2[is.na(Vector_GOtermsMol_Entrez_Imp2)] = "Unknown"
+
+# Create data frames with the GO terms and associated accession numbers
+Data_GOterms_Full_Imp2 = data.frame(Accession = rownames(Data_GO_Full_Imp2))
+Data_GOterms_Full_Imp2$GO_terms = Vector_GOtermsMol_Full_Imp2
+
+Data_GOterms_EMBL_Imp2 = data.frame(Accession = rownames(Data_GO_EMBL_Imp2))
+Data_GOterms_EMBL_Imp2$GO_terms = Vector_GOtermsMol_EMBL_Imp2
+
+Data_GOterms_Entrez_Imp2 = data.frame(Accession = rownames(Data_GO_Entrez_Imp2))
+Data_GOterms_Entrez_Imp2$GO_terms = Vector_GOtermsMol_Entrez_Imp2
+
+# Remove excessive information
+Data_GOterms_Full_Imp2$GO_terms = gsub("\\s*\\[.*\\]", "", Data_GOterms_Full_Imp2$GO_terms)
+Data_GOterms_EMBL_Imp2$GO_terms = gsub("\\s*\\[.*\\]", "", Data_GOterms_EMBL_Imp2$GO_terms)
+Data_GOterms_Entrez_Imp2$GO_terms = gsub("\\s*\\[.*\\]", "", Data_GOterms_Entrez_Imp2$GO_terms)
+
+### Draw a complex heatmap with GO data integrated into the dendogram
+Function_drawHeatmap_Complex_Go = function(data, ANOVA_output, GO_terms, title, fontsize = 2) {
+  ## Data preparation
+  # Create a new column for the accession numbers needed for the analysis
+  data$Accession = rownames(data)
+  
+  # Move the column to the beginning, removing the copy and the row names.
+  rownames(data) = NULL
+  data = data[, c("Accession", names(data)[-ncol(data)])]
+  
+  # Convert the data frame to a long format
+  data_long = Function_makeLong(data, exclude_columns = "Accession")
+  
+  # Separate the variable column into 3
+  data_long = separate(data_long, variable, c("variable_type", "sensitivity_type", "replicate"))
+  
+  # Set the data types
+  data_long$variable_type = as.factor(data_long$variable_type)
+  data_long$sensitivity_type = as.factor(data_long$sensitivity_type)
+  data_long$intensity = as.numeric(data_long$value)
+  data_long$replicate = as.factor(data_long$replicate)
+  
+  ## Heatmap data prep
+  # Create a vector containing the accession numbers of the significant proteins
+  Sign_Prot = ANOVA_output$Data_ANOVA_signProteins$Accession
+  
+  # Subset the intensity data frame to retain only significant proteins
+  sub_data = subset(data_long, Accession %in% Sign_Prot)
+  
+  # Convert the intensities to log2 to decrease variance between samples
+  sub_data$log2_intensity = log2(sub_data$intensity)
+  
+  # Calculate the overall mean of all the significant protein intensities individually
+  Data_meanSD = aggregate(log2_intensity ~ Accession, data = sub_data, FUN = mean)
+  colnames(Data_meanSD)[2] = "overall_mean"
+  
+  # Calculate the standard deviation for each mean and add it to the data frame
+  data_sd = aggregate(log2_intensity ~ Accession, data = sub_data, FUN = sd)
+  colnames(data_sd)[2] = "overall_sd"
+  Data_meanSD = merge(Data_meanSD, data_sd, by = "Accession")
+  
+  # Calculate the z-values
+  Data_heatmap = data.frame(sub_data, z_value = (sub_data$log2_intensity - Data_meanSD$overall_mean[match(sub_data$Accession, Data_meanSD$Accession)]) / Data_meanSD$overall_sd[match(sub_data$Accession, Data_meanSD$Accession)])
+  
+  # Ensure the z_value column is numeric
+  Data_heatmap$z_value = as.numeric(as.character(Data_heatmap$z_value))
+  
+  # Select the relevant columns from Data_heatmap
+  rel_col = Data_heatmap[, c("Accession", "variable_type", "sensitivity_type", "replicate", "z_value")]
+  rel_col$z_value = as.numeric(as.character(rel_col$z_value))
+  
+  # Pivot the data to create a matrix with proteins as rows and combinations as columns
+  Matrix_heatmap = reshape2::dcast(rel_col, Accession ~ variable_type + sensitivity_type + replicate, 
+                                   value.var = "z_value")
+  
+  # Convert the 'accession' column into row names and delete the column
+  rownames(Matrix_heatmap) = Matrix_heatmap$Accession
+  Matrix_heatmap$Accession = NULL
+  
+  # Convert the matrix to a HeatmapList format
+  Matrix_heatmap = as.matrix(Matrix_heatmap)
+  
+  ## Draw the heatmap
+  # Specify a randomized number to ensure a reproducible heatmap
+  set.seed(12345)
+  
+  # Define annotations for the heatmap
+  heat_colors = colorRamp2(c(-3, 0, 3), c("blue", "white", "red"))
+  col_annotation = HeatmapAnnotation(df = data.frame(replicate = unique(rel_col$replicate)), 
+                                     col = list(replicate = c("1" = "blue", "2" = "green", "3" = "red")))
+  
+  # Draw the heatmap
+  Plot_heatmap_complex = Heatmap(Matrix_heatmap, name = "Z-value",
+                                 col = heat_colors,
+                                 cluster_rows = TRUE, cluster_columns = TRUE,
+                                 show_row_names = TRUE, show_column_names = FALSE,
+                                 row_names_side = "right",
+                                 column_title =  title,
+                                 row_names_gp = gpar(fontsize = fontsize))
+  
+  # Add dendogram coloration based on GO terms
+  heatmap_dendogram = HeatmapAnnotation(df = data.frame(GO_terms),
+                                        col = list(GO_terms = GO_terms))
+  
+  #Add the dendogram coloration to the heatmap
+  Plot_heatmap_complex = add_heatmap_annotation(Plot_heatmap_complex, heatmap_dendogram,
+                                                which = "row",
+                                                side = "left",
+                                                annotation_name_gp = gpar(fontsize = fontsize))
+  
+  return(Plot_heatmap_complex)
+}
+
+
 
 ## Executing the function
-Plot_Heat_Imp2_Full_Complex = Function_drawHeatmap_Complex(Data_Imp2_Mean, Output_ANOVA_Imp2, title = "Heatmap of Z-values for proteins processed by method 2, using ComplexHeatmap", fontsize = 2)
+Plot_Heat_Imp2_Full_Complex = Function_drawHeatmap_Complex_GO(Data_Imp2_Mean, Output_ANOVA_Imp2, title = "Heatmap of Z-values for proteins processed by method 2, using ComplexHeatmap", fontsize = 2)
 
 ## Save the heatmap as a PNG
 Plot_Heat_Imp2_Full_Complex = ggplotify::as.ggplot(Plot_Heat_Imp2_Full_Complex)
