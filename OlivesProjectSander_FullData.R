@@ -38,6 +38,7 @@ library(circlize)
 library(ggplotify)
 library(dendextend)
 library(stringr)
+library(grDevices)
 
 # Setting the working directory
 setwd("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New")
@@ -336,81 +337,6 @@ Function_performANOVA = function(data, p_value) {
     return(output)
 }
   
-### Heatmap generation
-Function_drawHeatmap = function(data, ANOVA_output, title = title, fontsize_rows = 2) {
-  ## Data preparation
-  # Create a new column for the accession numbers needed for the analysis
-  data$Accession = rownames(data)
-  
-  # Move the column to the beginning, removing the copy and the row names.
-  rownames(data) = NULL
-  data = data[, c("Accession", names(data)[-ncol(data)])]
-  
-  # Convert the data frame to a long format
-  Data_long = Function_makeLong(data, exclude_columns = "Accession")
-  
-  # Separate the variable column into 3
-  Data_long = separate(Data_long, variable, c("variable_type", "sensitivity_type", "replicate"))
-  
-  # Set the data types
-  Data_long$variable_type = as.factor(Data_long$variable_type)
-  Data_long$sensitivity_type = as.factor(Data_long$sensitivity_type)
-  Data_long$intensity = as.numeric(Data_long$value)
-  Data_long$replicate = as.factor(Data_long$replicate)
-  
-  ## Heatmap data prep
-  # Create a vector containing the accession numbers of the significant proteins
-  Sign_Prot = ANOVA_output$Data_ANOVA_signProteins$Accession
-  
-  # Subset the intensity data frame to retain only significant proteins
-  sub_data = subset(Data_long, Accession %in% Sign_Prot)
-  
-  # Convert the intensities to log2 to decrease variance between samples.
-  sub_data = subset(Data_long, Accession %in% Sign_Prot)
-  names(sub_data)[5] = "log2_intensity"
-  
-  # Calculate the overall mean of all the significant protein intensities individually
-  Data_meanSD = aggregate(log2_intensity ~ Accession, data = sub_data, FUN = mean)
-  colnames(Data_meanSD)[2] = "overall_mean"
-  
-  # Calculate the standard deviation for each mean and add it to the data frame
-  data_sd = aggregate(log2_intensity ~ Accession, data = sub_data, FUN = sd)
-  colnames(data_sd)[2] = "overall_sd"
-  Data_meanSD = merge(Data_meanSD, data_sd, by = "Accession")
-  
-  # Calculate the z-values
-  Data_heatmap = data.frame(sub_data, z_value = (sub_data$log2_intensity - Data_meanSD$overall_mean[match(sub_data$Accession, Data_meanSD$Accession)]) / Data_meanSD$overall_sd[match(sub_data$Accession, Data_meanSD$Accession)])
-  
-  # Ensure the z_value column is numeric
-  Data_heatmap$z_value = as.numeric(as.character(Data_heatmap$z_value))
-  
-  # Select the relevant columns from Data_heatmap
-  rel_col = Data_heatmap[, c("Accession", "variable_type", "sensitivity_type", "replicate", "z_value")]
-  rel_col$z_value = as.numeric(as.character(rel_col$z_value))
-  
-  # Pivot the data to create a matrix with proteins as rows and combinations as columns
-  Matrix_heatmap = reshape2::dcast(rel_col, Accession ~ variable_type + sensitivity_type + replicate, 
-                                   value.var = "z_value")
-  
-  # Convert the 'accession' column into row names and delete the column
-  rownames(Matrix_heatmap) = Matrix_heatmap$Accession
-  Matrix_heatmap$Accession = NULL
-  Matrix_heatmap = as.matrix(Matrix_heatmap)
-  
-  ## Draw the heatmap
-  # Specify a randomized number to ensure a reproducible heatmap
-  set.seed(12345)
-  
-  # Create the heatmap based on the matrix
-  Plot_heatmap = pheatmap(Matrix_heatmap, 
-                          clustering_distance_rows = "euclidean", 
-                          clustering_distance_cols = "euclidean",
-                          main = title,
-                          fontsize_row = fontsize_rows)
-  
-  return(Plot_heatmap)
-}
-
 ### Heatmap generation with the ComplexHeatmap package
 Function_drawHeatmap_Complex = function(data, ANOVA_output, title, fontsize = 2) {
   ## Data preparation
@@ -486,7 +412,7 @@ Function_drawHeatmap_Complex = function(data, ANOVA_output, title, fontsize = 2)
   Plot_heatmap_complex = Heatmap(Matrix_heatmap, name = "Z-value",
                                  col = heat_colors,
                                  cluster_rows = TRUE, cluster_columns = TRUE,
-                                 show_row_names = TRUE, show_column_names = FALSE,
+                                 show_row_names = TRUE, show_column_names = TRUE,
                                  row_names_side = "right",
                                  column_title =  title,
                                  row_names_gp = gpar(fontsize = fontsize))
@@ -494,45 +420,100 @@ Function_drawHeatmap_Complex = function(data, ANOVA_output, title, fontsize = 2)
   return(Plot_heatmap_complex)
 }
 
-### Heatmap generation with gene ontology
-Function_drawHeatmap_GO = function(data, ANOVA_output, GO_data, title = "Heatmap with GO Annotations", fontsize_rows = 2) {
-  library(reshape2)
-  
+### Draw a complex heatmap with GO data integrated into the rownames
+Function_drawHeatmap_Complex_GO = function(data, ANOVA_output, GO_terms, title, fontsize = 2) {
   ## Data preparation
+  # Create a new column for the accession numbers needed for the analysis
   data$Accession = rownames(data)
+  
+  # Move the column to the beginning, removing the copy and the row names.
   rownames(data) = NULL
   data = data[, c("Accession", names(data)[-ncol(data)])]
   
+  # Convert the data frame to a long format
+  data_long = Function_makeLong(data, exclude_columns = "Accession")
+  
+  # Separate the variable column into 3
+  data_long = separate(data_long, variable, c("variable_type", "sensitivity_type", "replicate"))
+  
+  # Set the data types
+  data_long$variable_type = as.factor(data_long$variable_type)
+  data_long$sensitivity_type = as.factor(data_long$sensitivity_type)
+  data_long$intensity = as.numeric(data_long$value)
+  data_long$replicate = as.factor(data_long$replicate)
+  
   ## Heatmap data prep
-  Data_long = Function_makeLong(data, exclude_columns = "Accession")
-  Data_long = separate(Data_long, variable, c("variable_type", "sensitivity_type", "replicate"))
-  Data_long$variable_type = as.factor(Data_long$variable_type)
-  Data_long$sensitivity_type = as.factor(Data_long$sensitivity_type)
-  Data_long$intensity = as.numeric(Data_long$value)
-  Data_long$replicate = as.factor(Data_long$replicate)
+  # Create a vector containing the accession numbers of the significant proteins
+  Sign_Prot = ANOVA_output$Data_ANOVA_signProteins$Accession
   
-  ## Add GO annotations to the heatmap data
-  significant_proteins = ANOVA_output$Data_ANOVA_signProteins$Accession
-  GO_annotations = subset(GO_data, Accession %in% significant_proteins)
-  GO_merged = merge(Data_long, GO_annotations, by = "Accession", all.x = TRUE)
+  # Subset the intensity data frame to retain only significant proteins
+  sub_data = subset(data_long, Accession %in% Sign_Prot)
   
-  Matrix_heatmap = dcast(GO_merged, Accession ~ variable_type + sensitivity_type + replicate, value.var = "intensity")
-  Matrix_heatmap$GO_terms = GO_merged$Gene.Ontology.IDs  # Add GO terms as a new column
+  # Convert the intensities to log2 to decrease variance between samples
+  sub_data$log2_intensity = log2(sub_data$intensity)
   
-  ## Draw the heatmap with GO annotations
+  # Calculate the overall mean of all the significant protein intensities individually
+  Data_meanSD = aggregate(log2_intensity ~ Accession, data = sub_data, FUN = mean)
+  colnames(Data_meanSD)[2] = "overall_mean"
+  
+  # Calculate the standard deviation for each mean and add it to the data frame
+  data_sd = aggregate(log2_intensity ~ Accession, data = sub_data, FUN = sd)
+  colnames(data_sd)[2] = "overall_sd"
+  Data_meanSD = merge(Data_meanSD, data_sd, by = "Accession")
+  
+  # Calculate the z-values
+  Data_heatmap = data.frame(sub_data, z_value = (sub_data$log2_intensity - Data_meanSD$overall_mean[match(sub_data$Accession, Data_meanSD$Accession)]) / Data_meanSD$overall_sd[match(sub_data$Accession, Data_meanSD$Accession)])
+  
+  # Ensure the z_value column is numeric
+  Data_heatmap$z_value = as.numeric(as.character(Data_heatmap$z_value))
+  
+  # Select the relevant columns from Data_heatmap
+  rel_col = Data_heatmap[, c("Accession", "variable_type", "sensitivity_type", "replicate", "z_value")]
+  rel_col$z_value = as.numeric(as.character(rel_col$z_value))
+  
+  # Pivot the data to create a matrix with proteins as rows and combinations as columns
+  Matrix_heatmap = reshape2::dcast(rel_col, Accession ~ variable_type + sensitivity_type + replicate, 
+                                   value.var = "z_value")
+  
+  # Convert the 'accession' column into row names and delete the column
+  rownames(Matrix_heatmap) = Matrix_heatmap$Accession
+  Matrix_heatmap$Accession = NULL
+  
+  # Convert the matrix to a HeatmapList format
+  Matrix_heatmap = as.matrix(Matrix_heatmap)
+  
+  ## Draw the heatmap
+  # Specify a randomized number to ensure a reproducible heatmap
   set.seed(12345)
-  Plot_heatmap = pheatmap(Matrix_heatmap[, -1],  # Exclude the Accession column
-                           clustering_distance_rows = "euclidean",
-                           clustering_distance_cols = "euclidean",
-                           main = title,
-                           fontsize_row = fontsize_rows)
   
-  ## Annotate the heatmap with GO terms
-  go_terms = as.character(Matrix_heatmap$GO_terms)
-  rownames(Plot_heatmap$tree_row) = paste0(go_terms, "\n", rownames(Plot_heatmap$tree_row))
-  Plot_heatmap$row_labels = gsub(".*\n", "", Plot_heatmap$row_labels)
+  # Define annotations for the heatmap
+  heat_colors = colorRamp2(c(-3, 0, 3), c("blue", "white", "red"))
+  col_annotation = HeatmapAnnotation(df = data.frame(replicate = unique(rel_col$replicate)), 
+                                     col = list(replicate = c("1" = "blue", "2" = "green", "3" = "red")))
   
-  return(Plot_heatmap)
+  # Draw the heatmap
+  Plot_heatmap_complex = Heatmap(Matrix_heatmap, name = "Z-value",
+                                 col = heat_colors,
+                                 cluster_rows = TRUE, cluster_columns = TRUE,
+                                 show_row_names = TRUE, show_column_names = TRUE,
+                                 row_names_side = "right",
+                                 column_title =  title,
+                                 row_names_gp = gpar(fontsize = fontsize, col = GO_terms$Color))
+  
+  # Generate a second legend for the row name annotations
+  go_legend = Legend(labels = unique(GO_terms$GO_terms),
+                     title = "GO Terms", type = "color",
+                     labels_gp = gpar(fontsize = 7),
+                     legend_gp = gpar(fill = Vector_GOterm_ColorMap_Full),
+                     grid_height = unit(1, "mm"),
+                     grid_width = unit(1, "mm")
+  )
+  
+  
+  # Add the second legend to the heatmap
+  Plot_heatmap_complex = draw(Plot_heatmap_complex, annotation_legend_list = list(GO_terms = go_legend))
+  
+  return(Plot_heatmap_complex)
 }
 
 ### Q-Q plot calculation for intensities
@@ -663,6 +644,43 @@ Function_ExtractAccessionUnique = function(subset_list) {
   # Return the vector of accession numbers
   return(Vector_accession_numbers)
 }
+
+### Function to assign random colors to GO terms
+Function_GOterm_Color = function(GO_terms) {
+  unique_GO_terms = unique(GO_terms)
+  num_unique = length(unique_GO_terms)
+  unique_colors = rainbow(num_unique)
+  names(unique_colors) = unique_GO_terms
+  
+  # Set the color for "Unknown" to black
+  unique_colors["Unknown"] = "#000000"
+  
+  # Convert the hexadecimal color codes to word-format
+  unique_colors = grDevices::col2name(unique_colors)
+  
+  return(unique_colors)
+}
+
+### Function to assign random colors to GO terms
+Function_GOterm_Color = function(GO_terms) {
+  unique_GO_terms = unique(GO_terms)
+  num_unique = length(unique_GO_terms)
+  
+  # Get a list of available color names in R
+  available_colors = colors()
+  
+  # Use the available color names to assign colors to the GO terms
+  unique_colors = available_colors[seq(1, length(available_colors), length.out = num_unique)]
+  names(unique_colors) = unique_GO_terms
+  
+  # Set the color for "Unknown" to black
+  unique_colors["Unknown"] = "black"
+  
+  return(unique_colors[GO_terms])
+}
+
+
+
 
 #### !!! BEGINNING OF OVERALL DATA PROCESSING: NO DIFFERENCES BETWEEN THE 4 METHODS !!! ####
 ## The data needs to be prepared first, which includes visualization of the data
@@ -1570,11 +1588,11 @@ dev.off()
 
 
 #### Draw the heatmaps with gene ontology data ####
-## Prepare the data of the dendogram
+## Prepare the data
 # Extract the GO terms from the dataset, and only take the first section if it exists
-Vector_GOtermsMol_Full_Imp2 = str_extract(Data_GO_Full_Imp2$Gene.Ontology..molecular.function, "^[^;]+")
-Vector_GOtermsMol_EMBL_Imp2 = str_extract(Data_GO_EMBL_Imp2$Gene.Ontology..molecular.function, "^[^;]+")
-Vector_GOtermsMol_Entrez_Imp2 = str_extract(Data_GO_Entrez_Imp2$Gene.Ontology..molecular.function, "^[^;]+")
+Vector_GOtermsMol_Full_Imp2 = sub("\\s*\\[GO.*", "", Data_GO_Full_Imp2$Gene.Ontology..molecular.function)
+Vector_GOtermsMol_EMBL_Imp2 = sub("\\s*\\[GO.*", "", Data_GO_EMBL_Imp2$Gene.Ontology..molecular.function)
+Vector_GOtermsMol_Entrez_Imp2 = sub("\\s*\\[GO.*", "", Data_GO_Entrez_Imp2$Gene.Ontology..molecular.function)
 
 # Replace any NA values with "Unknown"
 Vector_GOtermsMol_Full_Imp2[is.na(Vector_GOtermsMol_Full_Imp2)] = "Unknown"
@@ -1596,108 +1614,30 @@ Data_GOterms_Full_Imp2$GO_terms = gsub("\\s*\\[.*\\]", "", Data_GOterms_Full_Imp
 Data_GOterms_EMBL_Imp2$GO_terms = gsub("\\s*\\[.*\\]", "", Data_GOterms_EMBL_Imp2$GO_terms)
 Data_GOterms_Entrez_Imp2$GO_terms = gsub("\\s*\\[.*\\]", "", Data_GOterms_Entrez_Imp2$GO_terms)
 
-### Draw a complex heatmap with GO data integrated into the dendogram
-Function_drawHeatmap_Complex_Go = function(data, ANOVA_output, GO_terms, title, fontsize = 2) {
-  ## Data preparation
-  # Create a new column for the accession numbers needed for the analysis
-  data$Accession = rownames(data)
-  
-  # Move the column to the beginning, removing the copy and the row names.
-  rownames(data) = NULL
-  data = data[, c("Accession", names(data)[-ncol(data)])]
-  
-  # Convert the data frame to a long format
-  data_long = Function_makeLong(data, exclude_columns = "Accession")
-  
-  # Separate the variable column into 3
-  data_long = separate(data_long, variable, c("variable_type", "sensitivity_type", "replicate"))
-  
-  # Set the data types
-  data_long$variable_type = as.factor(data_long$variable_type)
-  data_long$sensitivity_type = as.factor(data_long$sensitivity_type)
-  data_long$intensity = as.numeric(data_long$value)
-  data_long$replicate = as.factor(data_long$replicate)
-  
-  ## Heatmap data prep
-  # Create a vector containing the accession numbers of the significant proteins
-  Sign_Prot = ANOVA_output$Data_ANOVA_signProteins$Accession
-  
-  # Subset the intensity data frame to retain only significant proteins
-  sub_data = subset(data_long, Accession %in% Sign_Prot)
-  
-  # Convert the intensities to log2 to decrease variance between samples
-  sub_data$log2_intensity = log2(sub_data$intensity)
-  
-  # Calculate the overall mean of all the significant protein intensities individually
-  Data_meanSD = aggregate(log2_intensity ~ Accession, data = sub_data, FUN = mean)
-  colnames(Data_meanSD)[2] = "overall_mean"
-  
-  # Calculate the standard deviation for each mean and add it to the data frame
-  data_sd = aggregate(log2_intensity ~ Accession, data = sub_data, FUN = sd)
-  colnames(data_sd)[2] = "overall_sd"
-  Data_meanSD = merge(Data_meanSD, data_sd, by = "Accession")
-  
-  # Calculate the z-values
-  Data_heatmap = data.frame(sub_data, z_value = (sub_data$log2_intensity - Data_meanSD$overall_mean[match(sub_data$Accession, Data_meanSD$Accession)]) / Data_meanSD$overall_sd[match(sub_data$Accession, Data_meanSD$Accession)])
-  
-  # Ensure the z_value column is numeric
-  Data_heatmap$z_value = as.numeric(as.character(Data_heatmap$z_value))
-  
-  # Select the relevant columns from Data_heatmap
-  rel_col = Data_heatmap[, c("Accession", "variable_type", "sensitivity_type", "replicate", "z_value")]
-  rel_col$z_value = as.numeric(as.character(rel_col$z_value))
-  
-  # Pivot the data to create a matrix with proteins as rows and combinations as columns
-  Matrix_heatmap = reshape2::dcast(rel_col, Accession ~ variable_type + sensitivity_type + replicate, 
-                                   value.var = "z_value")
-  
-  # Convert the 'accession' column into row names and delete the column
-  rownames(Matrix_heatmap) = Matrix_heatmap$Accession
-  Matrix_heatmap$Accession = NULL
-  
-  # Convert the matrix to a HeatmapList format
-  Matrix_heatmap = as.matrix(Matrix_heatmap)
-  
-  ## Draw the heatmap
-  # Specify a randomized number to ensure a reproducible heatmap
-  set.seed(12345)
-  
-  # Define annotations for the heatmap
-  heat_colors = colorRamp2(c(-3, 0, 3), c("blue", "white", "red"))
-  col_annotation = HeatmapAnnotation(df = data.frame(replicate = unique(rel_col$replicate)), 
-                                     col = list(replicate = c("1" = "blue", "2" = "green", "3" = "red")))
-  
-  # Draw the heatmap
-  Plot_heatmap_complex = Heatmap(Matrix_heatmap, name = "Z-value",
-                                 col = heat_colors,
-                                 cluster_rows = TRUE, cluster_columns = TRUE,
-                                 show_row_names = TRUE, show_column_names = FALSE,
-                                 row_names_side = "right",
-                                 column_title =  title,
-                                 row_names_gp = gpar(fontsize = fontsize))
-  
-  # Add dendogram coloration based on GO terms
-  heatmap_dendogram = HeatmapAnnotation(df = data.frame(GO_terms),
-                                        col = list(GO_terms = GO_terms))
-  
-  #Add the dendogram coloration to the heatmap
-  Plot_heatmap_complex = add_heatmap_annotation(Plot_heatmap_complex, heatmap_dendogram,
-                                                which = "row",
-                                                side = "left",
-                                                annotation_name_gp = gpar(fontsize = fontsize))
-  
-  return(Plot_heatmap_complex)
-}
+# Create subsets based on the proteins plotted in the previous imp2 heatmap
+Data_GOterms_Full_Imp2 = Data_GOterms_Full_Imp2[Data_GOterms_Full_Imp2$Accession %in% Plot_Heat_Imp2[["plot_env"]][["plot"]]@row_names_param[["labels"]], ]
+Data_GOterms_EMBL_Imp2 = Data_GOterms_EMBL_Imp2[Data_GOterms_EMBL_Imp2$Accession %in% Plot_Heat_Imp2[["plot_env"]][["plot"]]@row_names_param[["labels"]], ]
+Data_GOterms_Entrez_Imp2 = Data_GOterms_Entrez_Imp2[Data_GOterms_Entrez_Imp2$Accession %in% Plot_Heat_Imp2[["plot_env"]][["plot"]]@row_names_param[["labels"]], ]
 
+# Add to the data frame a column for the associated colors per unique GO term
+Vector_GOterm_ColorMap_Full = Function_GOterm_Color(Data_GOterms_Full_Imp2$GO_terms)
+Data_GOterms_Full_Imp2$Color = Vector_GOterm_ColorMap_Full[Data_GOterms_Full_Imp2$GO_terms]
 
+Vector_GOterm_ColorMap_EMBL = Function_GOterm_Color(Data_GOterms_EMBL_Imp2$GO_terms)
+Data_GOterms_EMBL_Imp2$Color = Vector_GOterm_ColorMap_EMBL[Data_GOterms_EMBL_Imp2$GO_terms]
 
-## Executing the function
-Plot_Heat_Imp2_Full_Complex = Function_drawHeatmap_Complex_GO(Data_Imp2_Mean, Output_ANOVA_Imp2, title = "Heatmap of Z-values for proteins processed by method 2, using ComplexHeatmap", fontsize = 2)
+Vector_GOterm_ColorMap_Entrez = Function_GOterm_Color(Data_GOterms_Entrez_Imp2$GO_terms)
+Data_GOterms_Entrez_Imp2$Color = Vector_GOterm_ColorMap_Entrez[Data_GOterms_Entrez_Imp2$GO_terms]
+
+## Draw the heatmap with GO data
+Plot_HeatGO_Imp2_Full = Function_drawHeatmap_Complex_GO(Data_Imp2_Mean, Output_ANOVA_Imp2, Data_GOterms_Full_Imp2, title = "Heatmap of Z-values for proteins processed by method 2, with added GO data", fontsize = 2)
 
 ## Save the heatmap as a PNG
-Plot_Heat_Imp2_Full_Complex = ggplotify::as.ggplot(Plot_Heat_Imp2_Full_Complex)
-ggsave("HeatmapGO_Imp2.png", plot = Plot_Heat_Imp2_Full_Complex,
+Plot_HeatGO_Imp2_Full = ggplotify::as.ggplot(Plot_HeatGO_Imp2_Full)
+ggsave("HeatmapGO_Imp2.png", plot = Plot_HeatGO_Imp2_Full,
        scale = 1, width = 25, height = 20, units = "cm", dpi = 600)
+
+
 
 
 
