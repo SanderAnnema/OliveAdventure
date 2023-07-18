@@ -40,6 +40,7 @@ library(dendextend)
 library(stringr)
 library(grDevices)
 library(RColorBrewer)
+library(fitdistrplus)
 
 # Setting the working directory
 setwd("C:/Users/Skyar/OneDrive/Documenten/school/Master_BiMoS/2nd_research_project/Project_Olives_New")
@@ -554,25 +555,12 @@ Function_ExtractAccessionUnique = function(subset_list) {
 Function_GOterm_Color = function(GO_terms) {
   unique_GO_terms = unique(GO_terms)
   num_unique = length(unique_GO_terms)
-  unique_colors = rainbow(num_unique)
-  names(unique_colors) = unique_GO_terms
-  
-  # Set the color for "Unknown" to black
-  unique_colors["Unknown"] = "#000000"
-  
-  # Convert the hexadecimal color codes to word-format
-  unique_colors = grDevices::col2name(unique_colors)
-  
-  return(unique_colors)
-}
-
-### Function to assign random colors to GO terms
-Function_GOterm_Color = function(GO_terms) {
-  unique_GO_terms = unique(GO_terms)
-  num_unique = length(unique_GO_terms)
   
   # Get a list of available color names in R
   available_colors = colors()
+  
+  # Remove colors starting with 'grey' or 'gray' from available_colors
+  available_colors = available_colors[!grepl('grey|gray', available_colors, ignore.case = TRUE)]
   
   # Use the available color names to assign colors to the GO terms
   unique_colors = available_colors[seq(1, length(available_colors), length.out = num_unique)]
@@ -650,15 +638,34 @@ Function_drawHeatmap_Complex_GO = function(data, ANOVA_output, GO_terms, title, 
   # Specify a randomized number to ensure a reproducible heatmap
   set.seed(12345)
   
-  # Define annotations for the heatmap
+  ## Define annotations for the heatmap
+  # Heatmap colors
   heat_colors = colorRamp2(c(-3, 0, 3), c("blue", "white", "red"))
   col_annotation = HeatmapAnnotation(df = data.frame(replicate = unique(rel_col$replicate)), 
                                      col = list(replicate = c("1" = "blue", "2" = "green", "3" = "red")))
-  go_color_map = setNames(GO_terms$Color, GO_terms$GO_terms)
   
+  # Group proteins by GO terms using the 'interaction' function
+  GO_terms$GO_group = as.factor(interaction(GO_terms$GO_terms, drop = TRUE))
+  
+  # Create the color map with the new GO_group column
+  go_color_map = setNames(GO_terms$Color, GO_terms$GO_group)
+  
+  # Labels for ATP binding and DNA binding
+  rows_to_mark = which(GO_terms$GO_terms %in% c('ATP binding', 'DNA binding'))
+  labels_to_mark = GO_terms$GO_terms[rows_to_mark]
+  
+  # Define the GO column for the plot
   column_GO = rowAnnotation(
     GO = GO_terms$GO_terms,
-    col = list(GO = go_color_map)
+    col = list(GO = go_color_map),
+    mark = anno_mark(
+      at = rows_to_mark, 
+      labels = labels_to_mark, 
+      which = "row", 
+      side = "right", 
+      lines_gp = gpar(),
+      labels_gp = gpar(fontsize = 4)
+    )
   )
   
   # Draw the heatmap
@@ -669,7 +676,7 @@ Function_drawHeatmap_Complex_GO = function(data, ANOVA_output, GO_terms, title, 
                                  row_names_side = "right",
                                  row_names_gp = gpar(fontsize = 2),
                                  column_title =  title,
-                                 column_title_gp = gpar(fontsize =10, fontface = "bold"),
+                                 column_title_gp = gpar(fontsize = 10, fontface = "bold"),
                                  right_annotation = column_GO
   )
   
@@ -1031,7 +1038,7 @@ Data_Imp2 = do.call(cbind, lapply(names(List_subsetsFiltered_imp2), function(nam
 ## Generate the smooth histogram
 # Prepare the data
 DummyFrame = Function_makeLong(Data_Imp2)
-DummyFrame$value = log10(DummyFrame$value)
+DummyFrame$value = log2(DummyFrame$value)
 DummyFrame = as.data.frame(DummyFrame)
 
 # Since there are many missing values in the dataset, we need to remove these first.
@@ -1040,8 +1047,8 @@ DummyFrame = DummyFrame[DummyFrame$value != 0, ]
 
 # Generate a smooth histogram of the data
 Plot_SmoothHist_Imp2 = ggplot(DummyFrame, aes(x = value)) +
-  geom_density(fill = "skyblue", color = "black", alpha = 0.5, bw = 0.15) +
-  labs(x = "log10(intensity)", y = "Density", title = "Smooth Histogram of log10(intensity) for imputation with method 2")
+  geom_density(fill = "skyblue", color = "black", alpha = 0.5, bw = 0.4) +
+  labs(x = "log2(intensity)", y = "Density", title = "Smooth Histogram of log2(intensity) for imputation with method 2")
 
 # Print and save the histogram
 print(Plot_SmoothHist_Imp2)
@@ -1058,7 +1065,7 @@ Value_Gaussian_Sigma_Imp2 = Data_Gaussian_Fit_Imp2$estimate[2]
 Value_Gaussian_min3Sig_Imp2 = Value_Gaussian_Mu_Imp2 - 3 * Value_Gaussian_Sigma_Imp2
 
 # Convert the log10 intensity back to regular intensity
-Value_Rep_min_Imp2 = 10^(Value_Gaussian_min3Sig_Imp2)
+Value_Rep_min_Imp2 = 2^(Value_Gaussian_min3Sig_Imp2)
 
 ## Replace all zeros in the dataset with the found lowest value
 Data_Imp2[Data_Imp2 == 0] = Value_Rep_min_Imp2
@@ -1066,7 +1073,58 @@ Data_Imp2[Data_Imp2 == 0] = Value_Rep_min_Imp2
 # Remove excessive files
 rm(DummyFrame)
 
+#### Replacement imputation using a smooth histogram and fitted Gaussian distributiom
+# Since there are now subsets (factors) remaining where there are no non-zero values, and calculating the z-values requires standard deviations, we need to impute the remaining zeros as well.
+## Generate the smooth histogram
+# Prepare the data
+DummyFrame = Function_makeLong(Data_Imp2)
+DummyFrame$value = log2(DummyFrame$value)
+DummyFrame = as.data.frame(DummyFrame)
 
+# Since there are many missing values in the dataset, we need to remove these first.
+DummyFrame$value[is.infinite(DummyFrame$value)] = 0
+DummyFrame = DummyFrame[DummyFrame$value != 0, ]
+
+# Generate a smooth histogram of the data
+Plot_SmoothHist_Imp2 = ggplot(DummyFrame, aes(x = value)) +
+  geom_density(fill = "skyblue", color = "black", alpha = 0.5, bw = 0.4) +
+  labs(x = "log2(intensity)", y = "Density", title = "Smooth Histogram of log2(intensity) for imputation with method 2")
+
+# Print and save the histogram
+print(Plot_SmoothHist_Imp2)
+ggsave("SmoothHist_Imp2.png", plot = Plot_SmoothHist_Imp2,
+       scale = 1, width = 25, height = 20, units = "cm", dpi = 300)
+
+## Fit a Gaussian distribution to the data
+# Generate the fit, mean, and standard deviation of the Gaussian distribution
+Data_Gaussian_Fit_Imp2 = fitdistr(DummyFrame$value, "normal")
+Value_Gaussian_Mu_Imp2 = Data_Gaussian_Fit_Imp2$estimate[1]
+Value_Gaussian_Sigma_Imp2 = Data_Gaussian_Fit_Imp2$estimate[2]
+
+# Calculate minus 3 sigma value, which is the log10 intensity point that will be used to replace missing values.
+Value_Gaussian_min3Sig_Imp2 = Value_Gaussian_Mu_Imp2 - 3 * Value_Gaussian_Sigma_Imp2
+
+# Convert the log10 intensity back to regular intensity
+Value_Rep_min_Imp2 = 2^(Value_Gaussian_min3Sig_Imp2)
+
+## Replace all zeros in the dataset with the found lowest value
+Data_Imp2[Data_Imp2 == 0] = Value_Rep_min_Imp2
+
+# Remove excessive files
+rm(DummyFrame)
+
+# Draw the smooth histogram with the fitted Gaussian distribution
+Plot_SmoothHist_Imp2_Gauss = Plot_SmoothHist_Imp2 +
+  stat_function(fun = dnorm, args = list(mean = Value_Gaussian_Mu_Imp2, sd = Value_Gaussian_Sigma_Imp2),
+                aes(color = "Fitted Gaussian"), linetype = "dashed") +
+  geom_vline(aes(xintercept = Value_Gaussian_min3Sig_Imp2, color = "-3 Sigma"), linetype = "dotted") +
+  labs(color = "Legend") +
+  guides(color = guide_legend(title = NULL))
+
+# Print and save the histogram with fitted Gaussian distribution
+print(Plot_SmoothHist_Imp2_Gauss)
+ggsave("SmoothHist_Imp2_Gauss.png", plot = Plot_SmoothHist_Imp2_Gauss,
+       scale = 1, width = 25, height = 20, units = "cm", dpi = 300)
 
 
 #### Visualisation of mean imputed data with method 2 ####
@@ -1153,7 +1211,7 @@ ggsave("Heatmap_Imp2.png", plot = Plot_Heat_Imp2,
 ## Generate the smooth histogram
 # Prepare the data
 DummyFrame = Function_makeLong(Data_ANorm)
-DummyFrame$value = log10(DummyFrame$value)
+DummyFrame$value = log2(DummyFrame$value)
 DummyFrame = as.data.frame(DummyFrame)
 
 # Since there are many missing values in the dataset, we need to remove these first.
@@ -1162,8 +1220,8 @@ DummyFrame = DummyFrame[DummyFrame$value != 0, ]
 
 # Generate a smooth histogram of the data
 Plot_SmoothHist_Imp3 = ggplot(DummyFrame, aes(x = value)) +
-  geom_density(fill = "skyblue", color = "black", alpha = 0.5, bw = 0.15) +
-  labs(x = "log10(intensity)", y = "Density", title = "Smooth Histogram of log10(intensity) for imputation with method 3")
+  geom_density(fill = "skyblue", color = "black", alpha = 0.5, bw = 0.4) +
+  labs(x = "log2(intensity)", y = "Density", title = "Smooth Histogram of log2(intensity) for imputation with method 3")
 
 # Print and save the histogram
 print(Plot_SmoothHist_Imp3)
@@ -1180,7 +1238,7 @@ Value_Gaussian_Sigma_Imp3 = Data_Gaussian_Fit_Imp3$estimate[2]
 Value_Gaussian_min3Sig_Imp3 = Value_Gaussian_Mu_Imp3 - 3 * Value_Gaussian_Sigma_Imp3
 
 # Convert the log10 intensity back to regular intensity
-Value_Rep_min_Imp3 = 10^(Value_Gaussian_min3Sig_Imp3)
+Value_Rep_min_Imp3 = 2^(Value_Gaussian_min3Sig_Imp3)
 
 ## Replace all zeros in the dataset with the found lowest value
 Data_Imp3 = Data_ANorm
@@ -1188,6 +1246,19 @@ Data_Imp3[Data_Imp3 == 0] = Value_Rep_min_Imp3
 
 # Remove excessive files
 rm(DummyFrame)
+
+# Draw the smooth histogram with the fitted Gaussian distribution
+Plot_SmoothHist_Imp3_Gauss = Plot_SmoothHist_Imp3 +
+  stat_function(fun = dnorm, args = list(mean = Value_Gaussian_Mu_Imp3, sd = Value_Gaussian_Sigma_Imp3),
+                aes(color = "Fitted Gaussian"), linetype = "dashed") +
+  geom_vline(aes(xintercept = Value_Gaussian_min3Sig_Imp3, color = "-3 Sigma"), linetype = "dotted") +
+  labs(color = "Legend") +
+  guides(color = guide_legend(title = NULL))
+
+# Print and save the histogram with fitted Gaussian distribution
+print(Plot_SmoothHist_Imp3_Gauss)
+ggsave("SmoothHist_Imp3_Gauss.png", plot = Plot_SmoothHist_Imp3_Gauss,
+       scale = 1, width = 25, height = 20, units = "cm", dpi = 300)
 
 
 
@@ -1620,6 +1691,7 @@ Data_GOterms_Entrez_Imp2 = Data_GOterms_Entrez_Imp2[Data_GOterms_Entrez_Imp2$Acc
 Vector_GOterm_ColorMap_Full = Function_GOterm_Color(Data_GOterms_Full_Imp2$GO_terms)
 Data_GOterms_Full_Imp2$Color = Vector_GOterm_ColorMap_Full[Data_GOterms_Full_Imp2$GO_terms]
 
+
 Vector_GOterm_ColorMap_EMBL = Function_GOterm_Color(Data_GOterms_EMBL_Imp2$GO_terms)
 Data_GOterms_EMBL_Imp2$Color = Vector_GOterm_ColorMap_EMBL[Data_GOterms_EMBL_Imp2$GO_terms]
 
@@ -1631,7 +1703,7 @@ Plot_HeatGO_Imp2_Full = Function_drawHeatmap_Complex_GO(Data_Imp2_Mean, Output_A
 
 ## Save the heatmap as a PNG
 Plot_HeatGO_Imp2_Full = ggplotify::as.ggplot(Plot_HeatGO_Imp2_Full)
-ggsave("HeatmapGO_Imp2.png", plot = Plot_HeatGO_Imp2_Full,
+ggsave("HeatmapGO_Imp2_Test.png", plot = Plot_HeatGO_Imp2_Full,
        scale = 1, width = 30, height = 20, units = "cm", dpi = 600)
 
 
