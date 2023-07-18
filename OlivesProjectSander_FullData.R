@@ -1277,7 +1277,7 @@ Plot_Bar_ProtRetent = ggplot(Table_ProtRetent, aes(x = Method, y = Percentage_re
   geom_bar(stat = "identity", fill = "skyblue") +
   labs(title = "Retention Percentage by Method",
        x = "Method",
-       y = "Percentage Retained")
+       y = "Proteins retained (%)")
 
 
 # Save the plot
