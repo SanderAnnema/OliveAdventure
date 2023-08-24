@@ -755,6 +755,7 @@ Function_savePlot(Plot_Box_ANorm, filename = "Boxplot_normalized_data_Full.png",
 
 
 #### Q-Q plots of normalized analysis to determine data normality ####
+# !!! DOESN'T WORK AS INTENDED !!!
 # Calculations
 QQData_intensity = Function_calcQQ_int(Data_ANorm_Box, "Q-Q Plot: Normalized Intensities")
 
